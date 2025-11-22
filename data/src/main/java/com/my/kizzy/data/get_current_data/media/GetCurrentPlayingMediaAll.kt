@@ -45,20 +45,28 @@ class GetCurrentPlayingMediaAll @Inject constructor(
         }
     }
 
-    operator fun invoke(): RichMediaMetadata {
+    operator fun invoke(packageName: String? = null, enabledApps: List<String> = emptyList()): RichMediaMetadata {
         val mediaSessionManager =
             context.getSystemService(Service.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val sessions = mediaSessionManager.getActiveSessions(componentName)
         for (mediaController in sessions) {
+            if (packageName != null && mediaController.packageName != packageName) continue
+            // Skip if enabledApps list is provided and package is not in it
+            if (enabledApps.isNotEmpty() && !enabledApps.contains(mediaController.packageName)) continue
+            
             val metadata = mediaController.metadata
             val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            val playbackState = mediaController.playbackState?.state
+            
+            // Skip if no title
+            if (title.isNullOrBlank()) continue
+            
             val appName = AppUtils.getAppName(mediaController.packageName)
             val author = metadata?.let { metadataResolver.getArtistOrAuthor(it) }
             val album = metadata?.let { metadataResolver.getAlbum(it) }
             val bitmap = metadata?.let { metadataResolver.getCoverArt(it) }
             val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)
             val position = mediaController.playbackState?.position
-            val playbackState = mediaController.playbackState?.state
 
             var timestamps: Timestamps? = null
             duration?.let {
@@ -68,38 +76,37 @@ class GetCurrentPlayingMediaAll @Inject constructor(
                 )
             }
 
-            if (title != null) {
-                val appIcon = RpcImage.ApplicationIcon(
-                    mediaController.packageName, context
-                )
+            // At this point we already checked title is not null/blank above
+            val appIcon = RpcImage.ApplicationIcon(
+                mediaController.packageName, context
+            )
 
-                var coverArt: RpcImage? = null
-                if (bitmap != null) {
-                    coverArt = RpcImage.BitmapImage(
-                        context = context,
-                        bitmap = bitmap,
-                        packageName = mediaController.packageName,
-                        title = "${metadata.let { metadataResolver.getAlbumArtists(it) }}|${metadata.let { metadataResolver.getAlbum(it) } ?: title}"
-                    )
-                }
-
-                val playbackStateIcon = getPlaybackStateIcon(playbackState ?: PlaybackState.STATE_PAUSED)
-
-                return RichMediaMetadata(
-                    appName = appName,
+            var coverArt: RpcImage? = null
+            if (bitmap != null) {
+                coverArt = RpcImage.BitmapImage(
+                    context = context,
+                    bitmap = bitmap,
                     packageName = mediaController.packageName,
-                    title = title,
-                    artist = author,
-                    album = album,
-                    coverArt = coverArt,
-                    appIcon = appIcon,
-                    playbackStateIcon = playbackStateIcon,
-                    playbackState = playbackState,
-                    duration = duration,
-                    position = position,
-                    timestamps = timestamps
+                    title = "${metadata.let { metadataResolver.getAlbumArtists(it) }}|${metadata.let { metadataResolver.getAlbum(it) } ?: title}"
                 )
             }
+
+            val playbackStateIcon = getPlaybackStateIcon(playbackState ?: PlaybackState.STATE_PAUSED)
+
+            return RichMediaMetadata(
+                appName = appName,
+                packageName = mediaController.packageName,
+                title = title,
+                artist = author,
+                album = album,
+                coverArt = coverArt,
+                appIcon = appIcon,
+                playbackStateIcon = playbackStateIcon,
+                playbackState = playbackState,
+                duration = duration,
+                position = position,
+                timestamps = timestamps
+            )
         }
         return RichMediaMetadata()
     }

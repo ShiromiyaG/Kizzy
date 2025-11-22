@@ -165,7 +165,7 @@ class MediaRpcService : Service() {
         logger.d("MediaRPC", "Active sessions changed")
 
         // For some reason, event is occasionally fired before session list is actually updated
-        if (isEvent) runBlocking { delay(1500) }
+        if (isEvent) runBlocking { delay(100) }
 
         if (mediaSessions?.isNotEmpty() == true) {
             currentMediaController?.unregisterCallback(mediaControllerCallback)
@@ -187,7 +187,7 @@ class MediaRpcService : Service() {
             // Cancel all previous jobs and start new job to prevent conflict/spam
             scope.coroutineContext.cancelChildren()
             scope.launch {
-                delay(1000)
+                delay(50)
                 updatePresence()
             }
         }
@@ -196,7 +196,7 @@ class MediaRpcService : Service() {
 
             scope.coroutineContext.cancelChildren()
             scope.launch {
-                delay(1000)
+                delay(50)
                 updatePresence()
             }
         }
