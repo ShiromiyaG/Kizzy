@@ -29,18 +29,31 @@ jobs:
       - name: Get version name
         id: version
         run: |
-          VERSION=$(grep "versionName" app/build.gradle.kts | awk '{print $3}' | tr -d '"')
+          VERSION=$(grep "version-name" gradle/libs.versions.toml | head -n 1 | cut -d'"' -f2)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
 
-      - name: Find APK file
+      - name: List and find APK file
         id: find_apk
         run: |
+          echo "Listing APK directory:"
+          ls -la app/build/outputs/apk/release/ || echo "Directory not found"
           APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Error: No APK file found"
+            exit 1
+          fi
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           echo "Found APK: $APK_PATH"
 
+      - name: Rename APK
+        run: |
+          APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
+          NEW_NAME="Kizzy-${{ steps.version.outputs.version }}.apk"
+          mv "$APK_PATH" "app/build/outputs/apk/release/$NEW_NAME"
+          echo "Renamed to: $NEW_NAME"
+
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -49,5 +62,5 @@ jobs:
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: ${{ steps.find_apk.outputs.apk_path }}
+          files: app/build/outputs/apk/release/Kizzy-${{ steps.version.outputs.version }}.apk
           fail_on_unmatched_files: true
