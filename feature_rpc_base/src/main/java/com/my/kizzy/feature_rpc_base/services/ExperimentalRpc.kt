@@ -211,27 +211,6 @@ class ExperimentalRpc : Service() {
             while (isActive) {
                 if (!useAppsRpc) break
                 
-                // Check for media sessions actively
-                if (useMediaRpc) {
-                    val currentSessions = try {
-                        mediaSessionManager.getActiveSessions(
-                            ComponentName(this@ExperimentalRpc, NotificationListener::class.java)
-                        )
-                    } catch (e: Exception) {
-                        emptyList()
-                    }
-                    
-                    val activeMediaSession = currentSessions.firstOrNull()
-                    
-                    if (activeMediaSession != null && 
-                        currentMediaController?.packageName != activeMediaSession.packageName) {
-                        log("Found new media session: ${activeMediaSession.packageName}")
-                        withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            activeSessionsListener(listOf(activeMediaSession))
-                        }
-                    }
-                }
-                
                 // Check for apps
                 val mediaPackages = if (currentMediaController != null) {
                     listOf(currentMediaController!!.packageName)
@@ -239,7 +218,6 @@ class ExperimentalRpc : Service() {
                 
                 val appsToCheck = enabledExperimentalApps.filter { !mediaPackages.contains(it) }
                 val currentApp = getCurrentlyRunningApp(filterList = appsToCheck)
-                log("App check: name='${currentApp.name}' pkg='${currentApp.packageName}' current='$currentPackageName' (excluding media: $mediaPackages)")
                 
                 if (currentApp.name.isNotEmpty() && enabledExperimentalApps.contains(currentApp.packageName)) {
                     noAppFoundCount = 0
@@ -261,7 +239,7 @@ class ExperimentalRpc : Service() {
                     }
                 }
                 
-                delay(20)
+                delay(1000)
             }
         }
     }

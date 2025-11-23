@@ -32,23 +32,22 @@ jobs:
           VERSION=$(grep "versionName" app/build.gradle.kts | awk '{print $3}' | tr -d '"')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Find APK file
+        id: find_apk
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "Found APK: $APK_PATH"
+
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-
-      - name: Upload Release APK
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: app/build/outputs/apk/release/app-release.apk
-          asset_name: Kizzy-${{ steps.version.outputs.version }}.apk
-          asset_content_type: application/vnd.android.package-archive
+          files: ${{ steps.find_apk.outputs.apk_path }}
+          fail_on_unmatched_files: true
