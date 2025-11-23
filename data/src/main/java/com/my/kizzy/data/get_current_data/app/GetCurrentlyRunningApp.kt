@@ -35,6 +35,12 @@ class GetCurrentlyRunningApp @Inject constructor(
     private var lastKnownForegroundApp: String? = null
     private var lastKnownForegroundTime: Long = 0L
     
+    fun clearCache() {
+        android.util.Log.e("GetCurrentlyRunningApp", "🗑️ Cache cleared manually")
+        lastKnownForegroundApp = null
+        lastKnownForegroundTime = 0L
+    }
+    
     operator fun invoke(
         beginTime: Long = System.currentTimeMillis() - 30000,
         filterList: List<String> = emptyList()
@@ -44,18 +50,23 @@ class GetCurrentlyRunningApp @Inject constructor(
         val currentTimeMillis = System.currentTimeMillis()
         
         if (filterList.isNotEmpty()) {
-            // MUDANÇA: Usar janela menor primeiro para detecção rápida
-            val timeWindows = listOf(2000L, 5000L, 15000L)
+            // Use a large single window to capture all events including old MOVE_TO_BACKGROUND
+            val queryWindow = 300000L // 5 minutes
             
-            for (window in timeWindows) {
-                val events = usageStatsManager.queryEvents(currentTimeMillis - window, currentTimeMillis)
-                val appStates = mutableMapOf<String, MutableList<Pair<Long, Boolean>>>()
+            val events = usageStatsManager.queryEvents(
+                currentTimeMillis - queryWindow, 
+                currentTimeMillis
+            )
+            
+            // Track state of ALL apps in filterList
+            val appStates = mutableMapOf<String, MutableList<Pair<Long, Boolean>>>()
+            
+            while (events.hasNextEvent()) {
+                val event = android.app.usage.UsageEvents.Event()
+                events.getNextEvent(event)
                 
-                // MUDANÇA: Coletar todos os eventos de cada app
-                while (events.hasNextEvent()) {
-                    val event = android.app.usage.UsageEvents.Event()
-                    events.getNextEvent(event)
-                    
+                // Only track apps from filterList
+                if (filterList.contains(event.packageName)) {
                     when (event.eventType) {
                         android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                             appStates.getOrPut(event.packageName) { mutableListOf() }
@@ -67,73 +78,77 @@ class GetCurrentlyRunningApp @Inject constructor(
                         }
                     }
                 }
-                
-                // MUDANÇA: Encontrar o app mais recente e verificar se ainda está em foreground
-                var mostRecentApp: String? = null
-                var mostRecentTime = 0L
-                var isCurrentlyInForeground = false
-                
-                for ((pkg, eventsList) in appStates) {
-                    // Pegar o evento mais recente deste app
-                    val lastEvent = eventsList.maxByOrNull { it.first }
-                    if (lastEvent != null && lastEvent.first > mostRecentTime) {
-                        mostRecentTime = lastEvent.first
-                        mostRecentApp = pkg
-                        isCurrentlyInForeground = lastEvent.second
-                    }
-                }
-                
-                // CORREÇÃO: Verificar se encontrou um app válido em foreground
-                if (mostRecentApp != null && isCurrentlyInForeground) {
-                    if (filterList.contains(mostRecentApp) && 
-                        !mostRecentApp.contains("launcher", ignoreCase = true)) {
-                        
-                        val timeSince = currentTimeMillis - mostRecentTime
-                        android.util.Log.e("GetCurrentlyRunningApp", "✓ Found foreground app: $mostRecentApp (${timeSince}ms ago, window=${window}ms)")
-                        
-                        lastKnownForegroundApp = mostRecentApp
-                        lastKnownForegroundTime = mostRecentTime
-                        return createCommonRpc(mostRecentApp)
-                    }
-                }
-                
-                // CORREÇÃO: Só limpar cache se detectou background do app que conhecemos
-                if (mostRecentApp != null && 
-                    mostRecentApp == lastKnownForegroundApp && 
-                    !isCurrentlyInForeground) {
-                    
-                    android.util.Log.e("GetCurrentlyRunningApp", "✗ App moved to background: $mostRecentApp")
-                    lastKnownForegroundApp = null
-                    lastKnownForegroundTime = 0L
-                    return CommonRpc()
+            }
+            
+            // Find most recent app and its current state
+            var mostRecentApp: String? = null
+            var mostRecentTime = 0L
+            var isCurrentlyInForeground = false
+            
+            for ((pkg, eventsList) in appStates) {
+                // Get most recent event for this app
+                val lastEvent = eventsList.maxByOrNull { it.first }
+                if (lastEvent != null && lastEvent.first > mostRecentTime) {
+                    mostRecentTime = lastEvent.first
+                    mostRecentApp = pkg
+                    isCurrentlyInForeground = lastEvent.second
                 }
             }
             
-            // MUDANÇA: Reduzir cache para 10 segundos em vez de 30
+            // If found an app in FOREGROUND
+            if (mostRecentApp != null && isCurrentlyInForeground) {
+                if (!mostRecentApp.contains("launcher", ignoreCase = true)) {
+                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Found foreground app: $mostRecentApp (${currentTimeMillis - mostRecentTime}ms ago)")
+                    
+                    lastKnownForegroundApp = mostRecentApp
+                    lastKnownForegroundTime = mostRecentTime
+                    return createCommonRpc(mostRecentApp)
+                }
+            }
+            
+            // If last event was BACKGROUND, clear cache
+            if (mostRecentApp != null && 
+                mostRecentApp == lastKnownForegroundApp && 
+                !isCurrentlyInForeground) {
+                
+                android.util.Log.e("GetCurrentlyRunningApp", "✗ App moved to background: $mostRecentApp")
+                lastKnownForegroundApp = null
+                lastKnownForegroundTime = 0L
+                return CommonRpc()
+            }
+            
+            // Use cache with 60-second timeout as fallback
             if (lastKnownForegroundApp != null && filterList.contains(lastKnownForegroundApp)) {
                 val timeSinceKnown = currentTimeMillis - lastKnownForegroundTime
-                if (timeSinceKnown < 10000) { // 10 segundos
+                
+                // IMPORTANT: 60-second timeout as fallback
+                // If Android doesn't generate background event in 60s, assume app was closed
+                if (timeSinceKnown < 60000) {
                     android.util.Log.e("GetCurrentlyRunningApp", "✓ Using cached foreground app: $lastKnownForegroundApp (${timeSinceKnown}ms old)")
                     return createCommonRpc(lastKnownForegroundApp!!)
                 } else {
-                    // Cache expirado
-                    android.util.Log.e("GetCurrentlyRunningApp", "⏱ Cache expired for: $lastKnownForegroundApp")
-                    lastKnownForegroundApp = null
-                    lastKnownForegroundTime = 0L
+                    android.util.Log.e("GetCurrentlyRunningApp", "⏰ Cache timeout: $lastKnownForegroundApp (${timeSinceKnown}ms old)")
+                    // Don't clear yet - let fallback verify
                 }
             }
         }
         
         android.util.Log.e("GetCurrentlyRunningApp", "Using fallback method...")
         
-        // MUDANÇA: Reduzir fallback para 10 segundos
-        val fallbackBeginTime = currentTimeMillis - 10000
+        // Fallback for cases where no events (app just opened)
+        val fallbackBeginTime = currentTimeMillis - 60000 // 1 minute
         val queryUsageStats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_BEST, fallbackBeginTime, currentTimeMillis
         )
         
         if (queryUsageStats == null || queryUsageStats.isEmpty()) {
             android.util.Log.e("GetCurrentlyRunningApp", "No usage stats available")
+            // Clear cache if no data
+            if (lastKnownForegroundApp != null) {
+                android.util.Log.e("GetCurrentlyRunningApp", "✗ Clearing stale cache: $lastKnownForegroundApp")
+                lastKnownForegroundApp = null
+                lastKnownForegroundTime = 0L
+            }
             return CommonRpc()
         }
         
@@ -144,41 +159,60 @@ class GetCurrentlyRunningApp @Inject constructor(
         
         if (treeMap.isEmpty()) {
             android.util.Log.e("GetCurrentlyRunningApp", "TreeMap is empty")
+            if (lastKnownForegroundApp != null) {
+                android.util.Log.e("GetCurrentlyRunningApp", "✗ Clearing stale cache: $lastKnownForegroundApp")
+                lastKnownForegroundApp = null
+                lastKnownForegroundTime = 0L
+            }
             return CommonRpc()
         }
         
-        // If filter list is provided, only look for apps in that list
         if (filterList.isNotEmpty()) {
             val keys = treeMap.keys.toList().reversed()
             android.util.Log.e("GetCurrentlyRunningApp", "Checking ${keys.size} apps against filter list")
+            
+            // Track if cached app is found in recent usage
+            var cachedAppFoundInRecent = false
+            
             for (key in keys) {
                 val usageStats = treeMap[key]!!
                 val pkg = usageStats.packageName
                 
-                // MUDANÇA: Reduzir para 10 segundos
                 val timeSinceLastUse = currentTimeMillis - usageStats.lastTimeUsed
-                if (timeSinceLastUse > 10000) {
+                // Reduce window to 30 seconds
+                if (timeSinceLastUse > 30000 && timeSinceLastUse >= 0) {
                     continue
                 }
                 
-                if (pkg.contains("launcher", ignoreCase = true) || 
+                if (pkg.contains("launcher", ignoreCase = true) ||
                     pkg == "com.my.kizzy" ||
                     pkg == "android") {
                     continue
                 }
                 
+                // Mark if we found the cached app
+                if (pkg == lastKnownForegroundApp) {
+                    cachedAppFoundInRecent = true
+                }
+                
                 if (filterList.contains(pkg)) {
-                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Found valid app: $pkg (${timeSinceLastUse}ms ago)")
+                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Found valid app (fallback): $pkg (${timeSinceLastUse}ms ago)")
                     lastKnownForegroundApp = pkg
                     lastKnownForegroundTime = key
                     return createCommonRpc(pkg)
                 }
             }
             
+            // If cached app NOT found in recent UsageStats, clear it
+            if (lastKnownForegroundApp != null && !cachedAppFoundInRecent) {
+                android.util.Log.e("GetCurrentlyRunningApp", "✗ Cached app not in recent usage: $lastKnownForegroundApp")
+                lastKnownForegroundApp = null
+                lastKnownForegroundTime = 0L
+            }
+            
             android.util.Log.e("GetCurrentlyRunningApp", "✗ No enabled app found")
             return CommonRpc()
         } else {
-            // No filter, return most recent app
             val lastKey = treeMap.lastKey()
             val lastPackageName = treeMap[lastKey]!!.packageName
             android.util.Log.e("GetCurrentlyRunningApp", "Returning most recent app: $lastPackageName")

@@ -192,27 +192,30 @@ class ExperimentalRpc : Service() {
             while (isActive) {
                 if (!useAppsRpc) break
                 
-                // Check for media sessions
-                val currentSessions = try {
-                    mediaSessionManager.getActiveSessions(
-                        ComponentName(this@ExperimentalRpc, NotificationListener::class.java)
-                    )
-                } catch (e: Exception) {
-                    emptyList()
-                }
-                
-                val enabledMediaSession = currentSessions.firstOrNull {
-                    enabledExperimentalApps.contains(it.packageName)
-                }
-                
-                if (useMediaRpc && enabledMediaSession != null && currentMediaController == null) {
-                    log("Found media session: ${enabledMediaSession.packageName}")
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        activeSessionsListener(listOf(enabledMediaSession))
+                // Check for media sessions actively
+                if (useMediaRpc) {
+                    val currentSessions = try {
+                        mediaSessionManager.getActiveSessions(
+                            ComponentName(this@ExperimentalRpc, NotificationListener::class.java)
+                        )
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    
+                    val enabledMediaSession = currentSessions.firstOrNull {
+                        enabledExperimentalApps.contains(it.packageName)
+                    }
+                    
+                    if (enabledMediaSession != null && 
+                        currentMediaController?.packageName != enabledMediaSession.packageName) {
+                        log("Found new media session: ${enabledMediaSession.packageName}")
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            activeSessionsListener(listOf(enabledMediaSession))
+                        }
                     }
                 }
                 
-                // Check for apps (exclude media apps if there's an active media session)
+                // Check for apps
                 val mediaPackages = if (currentMediaController != null) {
                     listOf(currentMediaController!!.packageName)
                 } else emptyList()
@@ -234,17 +237,17 @@ class ExperimentalRpc : Service() {
                     }
                 } else {
                     noAppFoundCount++
-                    // MUDANÇA: Reduzir para 10 checks (2 segundos)
-                    if (noAppFoundCount >= 10 && currentPackageName.isNotEmpty()) {
+                    if (noAppFoundCount >= 5 && currentPackageName.isNotEmpty()) {
                         log("No app found for ${noAppFoundCount} checks, clearing...")
                         currentPackageName = ""
                         latestAppData = null
+                        getCurrentlyRunningApp.clearCache()
                         log("App cleared, calling decideAndPushRpc...")
                         decideAndPushRpc()
                     }
                 }
                 
-                delay(200)
+                delay(100)
             }
         }
     }
@@ -269,8 +272,6 @@ class ExperimentalRpc : Service() {
 
     private fun updateMediaState() {
         scope.launch {
-            delay(50)
-            
             if (currentMediaController != null) {
                 val richMediaData = getCurrentPlayingMediaAll(enabledApps = enabledExperimentalApps)
                 if (richMediaData.appName != null) {
@@ -292,9 +293,6 @@ class ExperimentalRpc : Service() {
             } else {
                 latestMediaData = null
                 latestRawMediaMetadata = null
-                if (latestAppData?.packageName in enabledExperimentalApps) {
-                    latestAppData = null
-                }
                 log("Media: Controller is null")
             }
             decideAndPushRpc()
