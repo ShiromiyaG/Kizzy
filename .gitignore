@@ -9,6 +9,8 @@
 .cxx
 local.properties
 /app/Kizzy.keystore
+*.keystore
+keystore.txt
 /app/debug/
 /buildSrc/build/
 
