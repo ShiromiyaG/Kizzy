@@ -33,6 +33,10 @@ class HomeScreenViewModel @Inject constructor(
     )
     val aboutScreenState: StateFlow<HomeScreenState> = _aboutScreenState
 
+    init {
+        getLatestUpdate()
+    }
+
     fun getLatestUpdate() {
         checkForUpdateUseCase().onEach { result ->
             when(result){

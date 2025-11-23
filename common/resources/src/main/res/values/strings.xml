@@ -220,4 +220,7 @@
     <string name="set_imgur_client_id_desc">If images aren\'t showing using Imgur, you can try setting your own Client ID</string>
     <string name="show_song_as_title">Show Song as Title</string>
     <string name="accessibility_service_description">This service detects which app is currently in the foreground to show your Discord Rich Presence status. No personal data is collected or transmitted.</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_download_title">Kizzy Update</string>
+    <string name="update_download_description">Downloading update…</string>
 </resources>

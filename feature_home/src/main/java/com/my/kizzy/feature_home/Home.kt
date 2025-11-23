@@ -13,6 +13,7 @@
 package com.my.kizzy.feature_home
 
 import android.content.ComponentName
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +49,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +59,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -104,29 +107,72 @@ fun Home(
     var showUpdateDialog by remember {
         mutableStateOf(false)
     }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    var autoCheckDone by remember {
+        mutableStateOf(false)
+    }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val drawerAlpha by remember {
+        androidx.compose.runtime.derivedStateOf {
+            if (drawerState.currentValue == DrawerValue.Closed &&
+                drawerState.targetValue == DrawerValue.Closed
+            ) 0f else 1f
+        }
+    }
     val scrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
             rememberTopAppBarState(),
             canScroll = { true })
     val isCollapsed = scrollBehavior.state.collapsedFraction > 0.55f
 
-    // Refresh home screen in case user turns off service from notification/Quickie
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1000)
+        checkForUpdates()
+    }
+
+    LaunchedEffect(state) {
+        if (state is HomeScreenState.LoadingCompleted && !autoCheckDone) {
+            kotlinx.coroutines.delay(500)
+            val hasUpdate = state.release.toVersion().whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
+            if (hasUpdate) showUpdateDialog = true
+            autoCheckDone = true
+        }
+    }
+
     OnLifecycleEvent { _, event ->
         when (event) {
-            Lifecycle.Event.ON_RESUME -> {
-                timestamp = System.currentTimeMillis()
-            }
-
+            Lifecycle.Event.ON_RESUME -> timestamp = System.currentTimeMillis()
             else -> {}
+        }
+    }
+
+    if (showUpdateDialog && state is HomeScreenState.LoadingCompleted) {
+        val hasUpdate = state.release.toVersion().whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
+        if (hasUpdate) {
+            with(state.release) {
+                UpdateDialog(
+                    newVersionPublishDate = publishedAt ?: "",
+                    newVersionSize = assets?.getOrNull(0)?.size ?: 0,
+                    newVersionLog = body ?: "",
+                    downloadUrl = assets?.firstOrNull { it?.name?.endsWith(".apk") == true }?.browserDownloadUrl 
+                        ?: "https://github.com/ShiromiyaG/Kizzy/releases/latest/download/app-release.apk",
+                    onDismissRequest = { showUpdateDialog = false }
+                )
+            }
+        } else {
+            Toast.makeText(ctx, ctx.getString(R.string.update_no_updates_available), Toast.LENGTH_SHORT).show()
+            showUpdateDialog = false
         }
     }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
+            ModalDrawerSheet(
+                modifier = Modifier
+                    .width(300.dp)
+                    .graphicsLayer { alpha = drawerAlpha }
+            ) {
                 if (componentName != null) {
                     SettingsDrawer(
                         user = user,
@@ -265,35 +311,7 @@ fun Home(
                     }
                 }
             }
-            when (state) {
-                is HomeScreenState.LoadingCompleted -> {
-                    if (showUpdateDialog) {
-                        if (state.release.toVersion()
-                                .whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
-                        ) {
-                            with(state.release) {
-                                UpdateDialog(
-                                    newVersionPublishDate = publishedAt ?: "",
-                                    newVersionSize = assets?.getOrNull(0)?.size ?: 0,
-                                    newVersionLog = body ?: "",
-                                    onDismissRequest = {
-                                        showUpdateDialog = false
-                                    },
-                                )
-                            }
-                        } else {
-                            Toast.makeText(
-                                ctx,
-                                ctx.getString(R.string.update_no_updates_available),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            showUpdateDialog = false
-                        }
-                    }
-                }
 
-                else -> {}
-            }
         }
     }
 }
