@@ -31,6 +31,10 @@ import javax.inject.Inject
 class GetCurrentlyRunningApp @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    companion object {
+        var accessibilityServicePackage: String? = null
+    }
+    
     // Cache do último app em foreground
     private var lastKnownForegroundApp: String? = null
     private var lastKnownForegroundTime: Long = 0L
@@ -45,6 +49,34 @@ class GetCurrentlyRunningApp @Inject constructor(
         beginTime: Long = System.currentTimeMillis() - 30000,
         filterList: List<String> = emptyList()
     ): CommonRpc {
+        // PRIORITY 1: Use AccessibilityService if available
+        val accessPkg = accessibilityServicePackage
+        android.util.Log.e("GetCurrentlyRunningApp", "Invoke called. AccessPkg: $accessPkg, FilterList size: ${filterList.size}")
+        
+        accessPkg?.let { pkg ->
+            val inFilter = filterList.isEmpty() || filterList.contains(pkg)
+            val isLauncher = pkg.contains("launcher", ignoreCase = true)
+            val isSystemUI = pkg == "com.android.systemui" || pkg == "com.my.kizzy"
+            android.util.Log.e("GetCurrentlyRunningApp", "Checking AccessPkg: $pkg, inFilter: $inFilter, isLauncher: $isLauncher")
+            
+            // Se detectou launcher ou app fora do filtro, limpar cache
+            if (isLauncher || (!inFilter && !isSystemUI)) {
+                if (lastKnownForegroundApp != null) {
+                    android.util.Log.e("GetCurrentlyRunningApp", "🚨 App closed/switched, clearing cache (was: $lastKnownForegroundApp)")
+                    lastKnownForegroundApp = null
+                    lastKnownForegroundTime = 0L
+                }
+                return CommonRpc()
+            }
+            
+            if (inFilter) {
+                android.util.Log.e("GetCurrentlyRunningApp", "✅ Using AccessibilityService: $pkg")
+                lastKnownForegroundApp = pkg
+                lastKnownForegroundTime = System.currentTimeMillis()
+                return createCommonRpc(pkg)
+            }
+        }
+        
         val usageStatsManager =
             context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val currentTimeMillis = System.currentTimeMillis()
@@ -117,18 +149,18 @@ class GetCurrentlyRunningApp @Inject constructor(
                 return CommonRpc()
             }
             
-            // Use cache with 60-second timeout as fallback
+            // Use cache with 3-second timeout as fallback
             if (lastKnownForegroundApp != null && filterList.contains(lastKnownForegroundApp)) {
                 val timeSinceKnown = currentTimeMillis - lastKnownForegroundTime
                 
-                // IMPORTANT: 60-second timeout as fallback
-                // If Android doesn't generate background event in 60s, assume app was closed
-                if (timeSinceKnown < 60000) {
+                // Reduced timeout: AccessibilityService should update within 3s
+                if (timeSinceKnown < 3000) {
                     android.util.Log.e("GetCurrentlyRunningApp", "✓ Using cached foreground app: $lastKnownForegroundApp (${timeSinceKnown}ms old)")
                     return createCommonRpc(lastKnownForegroundApp!!)
                 } else {
                     android.util.Log.e("GetCurrentlyRunningApp", "⏰ Cache timeout: $lastKnownForegroundApp (${timeSinceKnown}ms old)")
-                    // Don't clear yet - let fallback verify
+                    lastKnownForegroundApp = null
+                    lastKnownForegroundTime = 0L
                 }
             }
         }

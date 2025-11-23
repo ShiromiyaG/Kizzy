@@ -67,6 +67,7 @@ import com.my.kizzy.ui.components.Subtitle
 import com.my.kizzy.ui.components.SwitchBar
 import com.my.kizzy.ui.components.preference.PreferenceSwitch
 import com.my.kizzy.ui.components.preference.PreferencesHint
+import com.my.kizzy.feature_rpc_base.components.AccessibilityPermissionCard
 
 private val completions = listOf(
     TemplateKeys.MEDIA_TITLE to R.string.completion_media_title,
@@ -74,6 +75,8 @@ private val completions = listOf(
     TemplateKeys.MEDIA_AUTHOR to R.string.completion_media_author,
     TemplateKeys.APP_NAME to R.string.completion_app_name,
 )
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,6 +160,9 @@ fun ExperimentalRpcScreen(
                 }
             }
             LazyColumn {
+                item {
+                    AccessibilityPermissionCard()
+                }
                 item {
                     Subtitle(text = stringResource(R.string.general_settings))
                 }

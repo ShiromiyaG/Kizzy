@@ -101,6 +101,25 @@ class ExperimentalRpc : Service() {
     override fun onCreate() {
         super.onCreate()
         log("EXPERIMENTAL RPC SERVICE CREATED")
+        
+        // Initialize with current value if available
+        ForegroundAppDetector.currentForegroundApp?.let { pkg ->
+            GetCurrentlyRunningApp.accessibilityServicePackage = pkg
+            log("🔄 AccessibilityService (Initial): $pkg")
+        }
+
+        ForegroundAppDetector.onForegroundAppChanged = { pkg ->
+            val isIgnored = pkg.contains("inputmethod", ignoreCase = true) ||
+                           pkg.contains("keyboard", ignoreCase = true) ||
+                           pkg == "com.android.systemui"
+            
+            if (!isIgnored) {
+                GetCurrentlyRunningApp.accessibilityServicePackage = pkg
+                log("🔄 AccessibilityService: $pkg")
+            } else {
+                log("🔄 AccessibilityService (Ignored): $pkg")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -230,24 +249,21 @@ class ExperimentalRpc : Service() {
                         currentPackageName = currentApp.packageName
                         latestAppData = currentApp.copy(time = Timestamps(start = System.currentTimeMillis()))
                         log("Detected app: ${currentApp.name} (${currentApp.packageName})")
-                        log("Calling decideAndPushRpc...")
                         decideAndPushRpc()
-                    } else {
-                        log("App unchanged: ${currentApp.packageName}")
                     }
                 } else {
                     noAppFoundCount++
-                    if (noAppFoundCount >= 5 && currentPackageName.isNotEmpty()) {
-                        log("No app found for ${noAppFoundCount} checks, clearing...")
+                    if (noAppFoundCount >= 3 && currentPackageName.isNotEmpty()) {
+                        log("No app found, clearing...")
                         currentPackageName = ""
                         latestAppData = null
                         getCurrentlyRunningApp.clearCache()
-                        log("App cleared, calling decideAndPushRpc...")
                         decideAndPushRpc()
+                        noAppFoundCount = 0
                     }
                 }
                 
-                delay(100)
+                delay(50)
             }
         }
     }
@@ -513,6 +529,8 @@ class ExperimentalRpc : Service() {
         appDetectionJob?.cancel()
         scope.cancel()
         kizzyRPC.closeRPC()
+        ForegroundAppDetector.onForegroundAppChanged = null
+        GetCurrentlyRunningApp.accessibilityServicePackage = null
         super.onDestroy()
     }
 
