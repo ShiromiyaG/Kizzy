@@ -221,15 +221,13 @@ class ExperimentalRpc : Service() {
                         emptyList()
                     }
                     
-                    val enabledMediaSession = currentSessions.firstOrNull {
-                        enabledExperimentalApps.contains(it.packageName)
-                    }
+                    val activeMediaSession = currentSessions.firstOrNull()
                     
-                    if (enabledMediaSession != null && 
-                        currentMediaController?.packageName != enabledMediaSession.packageName) {
-                        log("Found new media session: ${enabledMediaSession.packageName}")
+                    if (activeMediaSession != null && 
+                        currentMediaController?.packageName != activeMediaSession.packageName) {
+                        log("Found new media session: ${activeMediaSession.packageName}")
                         withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            activeSessionsListener(listOf(enabledMediaSession))
+                            activeSessionsListener(listOf(activeMediaSession))
                         }
                     }
                 }
@@ -274,9 +272,7 @@ class ExperimentalRpc : Service() {
         log("Media sessions changed: ${mediaSessions?.size ?: 0} sessions")
         mediaSessions?.forEach { log("  - ${it.packageName}") }
         
-        val newController = mediaSessions?.firstOrNull {
-            enabledExperimentalApps.contains(it.packageName)
-        }
+        val newController = mediaSessions?.firstOrNull()
         
         if (newController?.packageName != currentMediaController?.packageName) {
             log("Switching media controller: ${currentMediaController?.packageName} -> ${newController?.packageName}")
@@ -309,7 +305,7 @@ class ExperimentalRpc : Service() {
                 if (metadata != null) {
                     val richMediaData = getCurrentPlayingMediaAll(
                         packageName = controller.packageName,
-                        enabledApps = enabledExperimentalApps
+                        enabledApps = emptyList()
                     )
                     
                     if (richMediaData.appName != null && (!richMediaData.title.isNullOrBlank() || !richMediaData.artist.isNullOrBlank())) {
@@ -367,13 +363,14 @@ class ExperimentalRpc : Service() {
         var showMedia = false
         if (useMediaRpc && media != null && media.appName != null) {
             val isPlaying = media.playbackState == PlaybackState.STATE_PLAYING
-            showMedia = isPlaying
-            log("Media check: isPlaying=$isPlaying, showMedia=$showMedia")
+            val isBuffering = media.playbackState == PlaybackState.STATE_BUFFERING
+            showMedia = isPlaying || isBuffering
+            log("Media check: state=${media.playbackState}, isPlaying=$isPlaying, isBuffering=$isBuffering, showMedia=$showMedia")
         }
 
         // 2. Decide winner
         if (showMedia) {
-            log("Decision: Showing MEDIA (playing)")
+            log("Decision: Showing MEDIA (playing/buffering)")
             updatePresence(richMediaInfo = media, rawMediaMetadata = latestRawMediaMetadata)
         } else if (useAppsRpc && app != null && app.packageName.isNotEmpty()) {
             log("Decision: Showing APP - ${app.name} (${app.packageName})")
