@@ -187,6 +187,7 @@ class ExperimentalRpc : Service() {
         appDetectionJob = scope.launch {
             log("App detection coroutine started")
             var currentPackageName = ""
+            var noAppFoundCount = 0
             
             while (isActive) {
                 if (!useAppsRpc) break
@@ -204,28 +205,41 @@ class ExperimentalRpc : Service() {
                     enabledExperimentalApps.contains(it.packageName)
                 }
                 
-                if (useMediaRpc && enabledMediaSession != null) {
+                if (useMediaRpc && enabledMediaSession != null && currentMediaController == null) {
                     log("Found media session: ${enabledMediaSession.packageName}")
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
                         activeSessionsListener(listOf(enabledMediaSession))
                     }
-                    break
                 }
                 
-                // Check for apps
-                val currentApp = getCurrentlyRunningApp(filterList = enabledExperimentalApps)
+                // Check for apps (exclude media apps if there's an active media session)
+                val mediaPackages = if (currentMediaController != null) {
+                    listOf(currentMediaController!!.packageName)
+                } else emptyList()
+                
+                val appsToCheck = enabledExperimentalApps.filter { !mediaPackages.contains(it) }
+                val currentApp = getCurrentlyRunningApp(filterList = appsToCheck)
+                log("App check: name='${currentApp.name}' pkg='${currentApp.packageName}' current='$currentPackageName' (excluding media: $mediaPackages)")
                 
                 if (currentApp.name.isNotEmpty() && enabledExperimentalApps.contains(currentApp.packageName)) {
+                    noAppFoundCount = 0
                     if (currentApp.packageName != currentPackageName) {
                         currentPackageName = currentApp.packageName
                         latestAppData = currentApp.copy(time = Timestamps(start = System.currentTimeMillis()))
-                        log("Detected app: ${currentApp.name}")
+                        log("Detected app: ${currentApp.name} (${currentApp.packageName})")
+                        log("Calling decideAndPushRpc...")
                         decideAndPushRpc()
+                    } else {
+                        log("App unchanged: ${currentApp.packageName}")
                     }
                 } else {
-                    if (currentPackageName.isNotEmpty()) {
+                    noAppFoundCount++
+                    // MUDANÇA: Reduzir para 10 checks (2 segundos)
+                    if (noAppFoundCount >= 10 && currentPackageName.isNotEmpty()) {
+                        log("No app found for ${noAppFoundCount} checks, clearing...")
                         currentPackageName = ""
                         latestAppData = null
+                        log("App cleared, calling decideAndPushRpc...")
                         decideAndPushRpc()
                     }
                 }
@@ -255,22 +269,33 @@ class ExperimentalRpc : Service() {
 
     private fun updateMediaState() {
         scope.launch {
-            // Small delay to allow metadata to propagate
-            delay(100)
+            delay(50)
             
             if (currentMediaController != null) {
                 val richMediaData = getCurrentPlayingMediaAll(enabledApps = enabledExperimentalApps)
                 if (richMediaData.appName != null) {
                     latestMediaData = richMediaData
                     latestRawMediaMetadata = currentMediaController?.metadata
-                    log("Media Updated: ${richMediaData.title} - ${richMediaData.playbackState}")
+                    
+                    val playbackState = when(richMediaData.playbackState) {
+                        PlaybackState.STATE_PLAYING -> "PLAYING"
+                        PlaybackState.STATE_PAUSED -> "PAUSED"
+                        PlaybackState.STATE_STOPPED -> "STOPPED"
+                        else -> "OTHER (${richMediaData.playbackState})"
+                    }
+                    log("Media Updated: ${richMediaData.title} - State: $playbackState")
                 } else {
                     latestMediaData = null
                     latestRawMediaMetadata = null
+                    log("Media: No metadata available")
                 }
             } else {
                 latestMediaData = null
                 latestRawMediaMetadata = null
+                if (latestAppData?.packageName in enabledExperimentalApps) {
+                    latestAppData = null
+                }
+                log("Media: Controller is null")
             }
             decideAndPushRpc()
         }
@@ -296,22 +321,23 @@ class ExperimentalRpc : Service() {
     private suspend fun decideAndPushRpc() {
         val media = latestMediaData
         val app = latestAppData
+        
+        log("decideAndPushRpc called: media=${media?.appName}, app=${app?.name}")
 
         // 1. Determine if Media should be shown
         var showMedia = false
         if (useMediaRpc && media != null && media.appName != null) {
-            val hideOnPause = Prefs[Prefs.EXPERIMENTAL_RPC_HIDE_ON_PAUSE, false]
             val isPlaying = media.playbackState == PlaybackState.STATE_PLAYING
-            
-            showMedia = if (hideOnPause) isPlaying else true
+            showMedia = isPlaying
+            log("Media check: isPlaying=$isPlaying, showMedia=$showMedia")
         }
 
         // 2. Decide winner
         if (showMedia) {
-            log("Decision: Showing MEDIA")
+            log("Decision: Showing MEDIA (playing)")
             updatePresence(richMediaInfo = media, rawMediaMetadata = latestRawMediaMetadata)
         } else if (useAppsRpc && app != null && app.packageName.isNotEmpty()) {
-            log("Decision: Showing APP")
+            log("Decision: Showing APP - ${app.name} (${app.packageName})")
             updatePresence(appInfo = app)
         } else {
             log("Decision: CLEAR (No active media or app)")
@@ -324,6 +350,7 @@ class ExperimentalRpc : Service() {
         richMediaInfo: RichMediaMetadata? = null,
         rawMediaMetadata: MediaMetadata? = null,
     ) {
+        log("updatePresence called: appInfo=${appInfo?.name}, richMediaInfo=${richMediaInfo?.appName}")
         val rpcButtonsString = Prefs[Prefs.RPC_BUTTONS_DATA, "{}"]
         val rpcButtons = Json.decodeFromString<RpcButtons>(rpcButtonsString)
 
@@ -372,9 +399,13 @@ class ExperimentalRpc : Service() {
             // --- APP MODE ---
             effectivePackageName = appInfo.packageName
             
-            finalName = processor.process(templateName) ?: appInfo.name
-            finalDetails = processor.process(templateDetails) ?: appInfo.details
-            finalState = processor.process(templateState) ?: appInfo.state
+            val processedName = processor.process(templateName)
+            val processedDetails = processor.process(templateDetails)
+            val processedState = processor.process(templateState)
+            
+            finalName = if (processedName.isNullOrEmpty()) appInfo.name else processedName
+            finalDetails = if (processedDetails.isNullOrEmpty()) appInfo.details else processedDetails
+            finalState = if (processedState.isNullOrEmpty()) appInfo.state else processedState
 
             finalLargeImage = appInfo.largeImage
             finalSmallImage = appInfo.smallImage
@@ -383,6 +414,7 @@ class ExperimentalRpc : Service() {
             finalTimestamps = if (Prefs[Prefs.EXPERIMENTAL_RPC_ENABLE_TIMESTAMPS, true]) appInfo.time else null
         } else {
             // --- CLEAR ---
+            log("updatePresence: CLEAR mode")
             if (kizzyRPC.isRpcRunning()) {
                 kizzyRPC.closeRPC()
                 updateNotification(getString(R.string.idling_notification))
@@ -390,9 +422,11 @@ class ExperimentalRpc : Service() {
             return
         }
 
+        log("updatePresence: finalName=$finalName, finalDetails=$finalDetails, finalState=$finalState")
         val rpcDataIsEmpty = finalName.isNullOrEmpty() && finalDetails.isNullOrEmpty() && finalState.isNullOrEmpty()
 
         if (rpcDataIsEmpty) {
+            log("updatePresence: RPC data is empty, clearing")
             if (kizzyRPC.isRpcRunning()) {
                 kizzyRPC.closeRPC()
                 updateNotification(getString(R.string.idling_notification))
@@ -401,6 +435,7 @@ class ExperimentalRpc : Service() {
         }
 
         // Update RPC
+        log("updatePresence: Sending RPC to Discord (running=${kizzyRPC.isRpcRunning()})")
         if (kizzyRPC.isRpcRunning()) {
             kizzyRPC.updateRPC(
                 commonRpc = CommonRpc(
@@ -418,25 +453,31 @@ class ExperimentalRpc : Service() {
                 enableTimestamps = Prefs[Prefs.EXPERIMENTAL_RPC_ENABLE_TIMESTAMPS, true]
             )
         } else {
-            kizzyRPC.apply {
-                setName(finalName)
-                setType(appActivityTypes[effectivePackageName] ?: 0)
-                setStatus(Prefs[Prefs.CUSTOM_ACTIVITY_STATUS, "dnd"])
-                setDetails(finalDetails)
-                setState(finalState)
-                setStartTimestamps(finalTimestamps?.start)
-                setStopTimestamps(finalTimestamps?.end)
-                setLargeImage(finalLargeImage, finalLargeText)
-                setSmallImage(finalSmallImage, finalSmallText)
-                if (Prefs[Prefs.USE_RPC_BUTTONS, false]) {
-                    with(rpcButtons) {
-                        setButton1(button1.takeIf { it.isNotEmpty() })
-                        setButton1URL(button1Url.takeIf { it.isNotEmpty() })
-                        setButton2(button2.takeIf { it.isNotEmpty() })
-                        setButton2URL(button2Url.takeIf { it.isNotEmpty() })
+            try {
+                kizzyRPC.apply {
+                    setName(finalName)
+                    setType(appActivityTypes[effectivePackageName] ?: 0)
+                    setStatus(Prefs[Prefs.CUSTOM_ACTIVITY_STATUS, "dnd"])
+                    setDetails(finalDetails)
+                    setState(finalState)
+                    setStartTimestamps(finalTimestamps?.start)
+                    setStopTimestamps(finalTimestamps?.end)
+                    setLargeImage(finalLargeImage, finalLargeText)
+                    setSmallImage(finalSmallImage, finalSmallText)
+                    if (Prefs[Prefs.USE_RPC_BUTTONS, false]) {
+                        with(rpcButtons) {
+                            setButton1(button1.takeIf { it.isNotEmpty() })
+                            setButton1URL(button1Url.takeIf { it.isNotEmpty() })
+                            setButton2(button2.takeIf { it.isNotEmpty() })
+                            setButton2URL(button2Url.takeIf { it.isNotEmpty() })
+                        }
                     }
+                    build()
                 }
-                build()
+                log("updatePresence: RPC build() called")
+            } catch (e: Exception) {
+                log("updatePresence: ERROR building RPC: ${e.message}")
+                e.printStackTrace()
             }
         }
 
