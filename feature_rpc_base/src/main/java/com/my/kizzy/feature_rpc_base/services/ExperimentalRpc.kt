@@ -390,9 +390,9 @@ class ExperimentalRpc : Service() {
         val rpcButtonsString = Prefs[Prefs.RPC_BUTTONS_DATA, "{}"]
         val rpcButtons = Json.decodeFromString<RpcButtons>(rpcButtonsString)
 
-        val finalName: String?
-        val finalDetails: String?
-        val finalState: String?
+        var finalName: String?
+        var finalDetails: String?
+        var finalState: String?
         var finalLargeImage: RpcImage?
         var finalSmallImage: RpcImage?
         var finalLargeText: String?
@@ -411,9 +411,13 @@ class ExperimentalRpc : Service() {
             // --- MEDIA MODE ---
             effectivePackageName = richMediaInfo.packageName
             
-            finalName = processor.process(templateName) ?: richMediaInfo.appName
-            finalDetails = processor.process(templateDetails) ?: richMediaInfo.title ?: richMediaInfo.artist
-            finalState = processor.process(templateState) ?: richMediaInfo.artist ?: richMediaInfo.album
+            val processedName = processor.process(templateName)
+            val processedDetails = processor.process(templateDetails)
+            val processedState = processor.process(templateState)
+            
+            finalName = processedName?.takeIf { it.isNotBlank() } ?: richMediaInfo.appName
+            finalDetails = processedDetails?.takeIf { it.isNotBlank() } ?: richMediaInfo.title ?: richMediaInfo.artist
+            finalState = processedState?.takeIf { it.isNotBlank() } ?: richMediaInfo.artist ?: richMediaInfo.album
 
             finalLargeImage = when {
                 Prefs[Prefs.EXPERIMENTAL_RPC_SHOW_COVER_ART, true] -> richMediaInfo.coverArt
@@ -459,7 +463,13 @@ class ExperimentalRpc : Service() {
         }
 
         log("updatePresence: finalName=$finalName, finalDetails=$finalDetails, finalState=$finalState")
-        val rpcDataIsEmpty = finalName.isNullOrEmpty() && finalDetails.isNullOrEmpty() && finalState.isNullOrEmpty()
+        
+        if (finalName.isNullOrBlank()) {
+            log("updatePresence: finalName is empty, using fallback")
+            finalName = richMediaInfo?.appName ?: appInfo?.name ?: "Unknown"
+        }
+        
+        val rpcDataIsEmpty = finalName.isBlank() && finalDetails.isNullOrBlank() && finalState.isNullOrBlank()
 
         if (rpcDataIsEmpty) {
             log("updatePresence: RPC data is empty, clearing")
