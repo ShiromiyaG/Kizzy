@@ -149,12 +149,12 @@ class GetCurrentlyRunningApp @Inject constructor(
                 return CommonRpc()
             }
             
-            // Use cache with 3-second timeout as fallback
+            // Use cache with 1-second timeout as fallback
             if (lastKnownForegroundApp != null && filterList.contains(lastKnownForegroundApp)) {
                 val timeSinceKnown = currentTimeMillis - lastKnownForegroundTime
                 
-                // Reduced timeout: AccessibilityService should update within 3s
-                if (timeSinceKnown < 3000) {
+                // Very short timeout: AccessibilityService should update within 1s
+                if (timeSinceKnown < 1000) {
                     android.util.Log.e("GetCurrentlyRunningApp", "✓ Using cached foreground app: $lastKnownForegroundApp (${timeSinceKnown}ms old)")
                     return createCommonRpc(lastKnownForegroundApp!!)
                 } else {

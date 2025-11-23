@@ -263,7 +263,7 @@ class ExperimentalRpc : Service() {
                     }
                 }
                 
-                delay(50)
+                delay(20)
             }
         }
     }
