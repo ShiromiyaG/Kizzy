@@ -2,8 +2,10 @@ name: Release Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - master
+    paths:
+      - 'gradle/libs.versions.toml'
   workflow_dispatch:
 
 jobs:
@@ -32,6 +34,8 @@ jobs:
           VERSION=$(grep "version-name" gradle/libs.versions.toml | head -n 1 | cut -d'"' -f2)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Tag: v$VERSION"
 
       - name: List and find APK file
         id: find_apk
@@ -58,9 +62,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           files: app/build/outputs/apk/release/Kizzy-${{ steps.version.outputs.version }}.apk
           fail_on_unmatched_files: true
+          body: |
+            ## Kizzy v${{ steps.version.outputs.version }}
+            
+            ### Download
+            - [Kizzy-${{ steps.version.outputs.version }}.apk](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/Kizzy-${{ steps.version.outputs.version }}.apk)
