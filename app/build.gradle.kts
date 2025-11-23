@@ -17,6 +17,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        manifestPlaceholders["appName"] = "@string/app_name"
     }
 
     signingConfigs {
@@ -30,6 +31,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appName"] = "Kizzy DEBUG"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isShrinkResources = true

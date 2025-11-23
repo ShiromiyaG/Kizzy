@@ -281,10 +281,21 @@ class ExperimentalRpc : Service() {
                 log("updateMediaState: pkg=${controller.packageName}, hasMetadata=${metadata != null}, state=$playbackState")
                 
                 if (metadata != null) {
+                    // Check if app is in enabled list BEFORE processing
+                    if (!enabledExperimentalApps.contains(controller.packageName)) {
+                        log("Media: App ${controller.packageName} not in enabled list (${enabledExperimentalApps.size} apps enabled), skipping")
+                        latestMediaData = null
+                        latestRawMediaMetadata = null
+                        decideAndPushRpc()
+                        return@launch
+                    }
+                    
+                    log("Calling getCurrentPlayingMediaAll with pkg=${controller.packageName}, enabledApps=$enabledExperimentalApps")
                     val richMediaData = getCurrentPlayingMediaAll(
                         packageName = controller.packageName,
-                        enabledApps = emptyList()
+                        enabledApps = enabledExperimentalApps
                     )
+                    log("Result: appName=${richMediaData.appName}, pkg=${richMediaData.packageName}")
                     
                     if (richMediaData.appName != null && (!richMediaData.title.isNullOrBlank() || !richMediaData.artist.isNullOrBlank())) {
                         latestMediaData = richMediaData
