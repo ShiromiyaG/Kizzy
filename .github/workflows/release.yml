@@ -28,6 +28,9 @@ jobs:
       - name: Decode Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          ls -la release.keystore
+          echo "Keystore created at: $(pwd)/release.keystore"
+          file release.keystore
 
       - name: Assemble Release
         env:
