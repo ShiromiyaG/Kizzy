@@ -271,40 +271,65 @@ class ExperimentalRpc : Service() {
     private fun activeSessionsListener(mediaSessions: List<MediaController>?) {
         if (!useMediaRpc) return
         
-        log("Media sessions changed: ${mediaSessions?.size ?: 0}")
+        log("Media sessions changed: ${mediaSessions?.size ?: 0} sessions")
+        mediaSessions?.forEach { log("  - ${it.packageName}") }
         
-        currentMediaController?.unregisterCallback(mediaControllerCallback)
-        currentMediaController = null
-        
-        if (mediaSessions?.isNotEmpty() == true) {
-            currentMediaController = mediaSessions.firstOrNull {
-                enabledExperimentalApps.contains(it.packageName)
-            }
-            currentMediaController?.registerCallback(mediaControllerCallback)
+        val newController = mediaSessions?.firstOrNull {
+            enabledExperimentalApps.contains(it.packageName)
         }
         
-        updateMediaState()
+        if (newController?.packageName != currentMediaController?.packageName) {
+            log("Switching media controller: ${currentMediaController?.packageName} -> ${newController?.packageName}")
+            currentMediaController?.unregisterCallback(mediaControllerCallback)
+            currentMediaController = newController
+            currentMediaController?.registerCallback(mediaControllerCallback)
+            updateMediaState()
+        } else if (newController == null && currentMediaController != null) {
+            log("Clearing media controller")
+            currentMediaController?.unregisterCallback(mediaControllerCallback)
+            currentMediaController = null
+            updateMediaState()
+        }
     }
 
+    private var updateMediaJob: Job? = null
+    
     private fun updateMediaState() {
-        scope.launch {
-            if (currentMediaController != null) {
-                val richMediaData = getCurrentPlayingMediaAll(enabledApps = enabledExperimentalApps)
-                if (richMediaData.appName != null) {
-                    latestMediaData = richMediaData
-                    latestRawMediaMetadata = currentMediaController?.metadata
+        updateMediaJob?.cancel()
+        updateMediaJob = scope.launch {
+            delay(300)
+            
+            val controller = currentMediaController
+            if (controller != null) {
+                val metadata = controller.metadata
+                val playbackState = controller.playbackState?.state
+                
+                log("updateMediaState: pkg=${controller.packageName}, hasMetadata=${metadata != null}, state=$playbackState")
+                
+                if (metadata != null) {
+                    val richMediaData = getCurrentPlayingMediaAll(
+                        packageName = controller.packageName,
+                        enabledApps = enabledExperimentalApps
+                    )
                     
-                    val playbackState = when(richMediaData.playbackState) {
-                        PlaybackState.STATE_PLAYING -> "PLAYING"
-                        PlaybackState.STATE_PAUSED -> "PAUSED"
-                        PlaybackState.STATE_STOPPED -> "STOPPED"
-                        else -> "OTHER (${richMediaData.playbackState})"
+                    if (richMediaData.appName != null && (!richMediaData.title.isNullOrBlank() || !richMediaData.artist.isNullOrBlank())) {
+                        latestMediaData = richMediaData
+                        latestRawMediaMetadata = metadata
+                        
+                        val stateStr = when(richMediaData.playbackState) {
+                            PlaybackState.STATE_PLAYING -> "PLAYING"
+                            PlaybackState.STATE_PAUSED -> "PAUSED"
+                            PlaybackState.STATE_STOPPED -> "STOPPED"
+                            else -> "OTHER (${richMediaData.playbackState})"
+                        }
+                        log("Media Updated: ${richMediaData.title ?: "(sem título)"} - ${richMediaData.artist ?: "(sem artista)"} - State: $stateStr - CoverArt: ${richMediaData.coverArt != null}")
+                    } else {
+                        log("Media: Invalid data (appName=${richMediaData.appName}, title=${richMediaData.title}, artist=${richMediaData.artist})")
+                        return@launch
                     }
-                    log("Media Updated: ${richMediaData.title} - State: $playbackState")
                 } else {
-                    latestMediaData = null
-                    latestRawMediaMetadata = null
-                    log("Media: No metadata available")
+                    log("Media: Metadata is null, waiting...")
+                    return@launch
                 }
             } else {
                 latestMediaData = null
@@ -390,8 +415,8 @@ class ExperimentalRpc : Service() {
             effectivePackageName = richMediaInfo.packageName
             
             finalName = processor.process(templateName) ?: richMediaInfo.appName
-            finalDetails = processor.process(templateDetails) ?: richMediaInfo.title
-            finalState = processor.process(templateState) ?: richMediaInfo.artist
+            finalDetails = processor.process(templateDetails) ?: richMediaInfo.title ?: richMediaInfo.artist
+            finalState = processor.process(templateState) ?: richMediaInfo.artist ?: richMediaInfo.album
 
             finalLargeImage = when {
                 Prefs[Prefs.EXPERIMENTAL_RPC_SHOW_COVER_ART, true] -> richMediaInfo.coverArt

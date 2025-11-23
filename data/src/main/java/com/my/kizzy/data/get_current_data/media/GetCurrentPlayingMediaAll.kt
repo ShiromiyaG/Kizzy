@@ -55,15 +55,19 @@ class GetCurrentPlayingMediaAll @Inject constructor(
             if (enabledApps.isNotEmpty() && !enabledApps.contains(mediaController.packageName)) continue
             
             val metadata = mediaController.metadata
-            val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
             val playbackState = mediaController.playbackState?.state
             
-            // Skip if no title
-            if (title.isNullOrBlank()) continue
+            // Skip if no metadata at all
+            if (metadata == null) continue
+            
+            val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
+            
+            // Skip if no title AND no artist (completely empty metadata)
+            val author = metadataResolver.getArtistOrAuthor(metadata)
+            if (title.isNullOrBlank() && author.isNullOrBlank()) continue
             
             val appName = AppUtils.getAppName(mediaController.packageName)
-            val author = metadata?.let { metadataResolver.getArtistOrAuthor(it) }
-            val album = metadata?.let { metadataResolver.getAlbum(it) }
+            val album = metadata.let { metadataResolver.getAlbum(it) }
             val bitmap = metadata?.let { metadataResolver.getCoverArt(it) }
             val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)
             val position = mediaController.playbackState?.position
