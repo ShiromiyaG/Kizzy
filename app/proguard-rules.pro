@@ -1,3 +1,9 @@
+# Optimization flags
+-optimizationpasses 5
+-allowaccessmodification
+-dontpreverify
+-repackageclasses ''
+
 #OkHttp Rules
 -dontwarn okhttp3.internal.platform.**
 -dontwarn org.conscrypt.**
@@ -23,3 +29,25 @@
 -dontwarn java.lang.invoke.StringConcatFactory
 
 -dontwarn com.my.kizzy.resources.R$drawable
+
+# Remove logging in release
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+    public static *** i(...);
+}
+
+# Kotlin optimizations
+-assumenosideeffects class kotlin.jvm.internal.Intrinsics {
+    public static void checkNotNull(...);
+    public static void checkParameterIsNotNull(...);
+    public static void checkNotNullParameter(...);
+    public static void checkExpressionValueIsNotNull(...);
+    public static void checkNotNullExpressionValue(...);
+    public static void checkReturnedValueIsNotNull(...);
+    public static void throwUninitializedPropertyAccessException(...);
+}
+
+# Remove debug info
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
