@@ -548,8 +548,10 @@ class ExperimentalRpc : Service() {
         mediaSessionManager.removeOnActiveSessionsChangedListener(::activeSessionsListener)
         currentMediaController?.unregisterCallback(mediaControllerCallback)
         appDetectionJob?.cancel()
+        runBlocking {
+            kizzyRPC.closeRPC()
+        }
         scope.cancel()
-        kizzyRPC.closeRPC()
         ForegroundAppDetector.onForegroundAppChanged = null
         GetCurrentlyRunningApp.accessibilityServicePackage = null
         super.onDestroy()

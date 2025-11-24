@@ -27,6 +27,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -114,8 +115,10 @@ class CustomRpcService : Service() {
     }
 
     override fun onDestroy() {
+        runBlocking {
+            kizzyRPC.closeRPC()
+        }
         scope.cancel()
-        kizzyRPC.closeRPC()
         wakeLock?.let {
             if (it.isHeld) it.release()
         }

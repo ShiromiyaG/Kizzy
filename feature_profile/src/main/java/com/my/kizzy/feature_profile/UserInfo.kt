@@ -30,7 +30,7 @@ import kotlinx.serialization.json.jsonPrimitive
 private val json = Json { ignoreUnknownKeys = true }
 suspend fun getUserInfo(token: String, onInfoSaved: () -> Unit) {
     val discordWebSocket: DiscordWebSocket = object: DiscordWebSocketImpl(token){
-        override fun Payload.handleDispatch() {
+        override suspend fun Payload.handleDispatch() {
             if (this.t.toString() == "READY"){
                 val data = this.d!!.jsonObject["user"] as JsonObject?
                 val user = json.decodeFromString<User>(data.toString())

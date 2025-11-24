@@ -50,7 +50,7 @@ class KizzyRPC(
     private var buttonUrl = ArrayList<String>()
     private var url: String? = null
 
-    fun closeRPC() {
+    suspend fun closeRPC() {
         discordWebSocket.close()
     }
 

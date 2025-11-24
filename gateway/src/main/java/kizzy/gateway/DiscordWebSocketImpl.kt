@@ -14,6 +14,8 @@ import kizzy.gateway.entities.op.OpCode
 import kizzy.gateway.entities.op.OpCode.*
 import kizzy.gateway.entities.presence.Presence
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -34,7 +36,7 @@ open class DiscordWebSocketImpl(
     private var heartbeatInterval = 0L
     private var resumeGatewayUrl: String? = null
     private var heartbeatJob: Job? = null
-    private var connected = false
+    private val _connected = MutableStateFlow(false)
     private var client: HttpClient = HttpClient {
         install(WebSockets)
     }
@@ -74,7 +76,7 @@ open class DiscordWebSocketImpl(
 
     private suspend fun handleClose(){
         heartbeatJob?.cancel()
-        connected = false
+        _connected.value = false
         val close = websocket?.closeReason?.await()
         logger.w("Gateway","Closed with code: ${close?.code}, " +
                 "reason: ${close?.message}, " +
@@ -102,7 +104,7 @@ open class DiscordWebSocketImpl(
         }
     }
 
-    open fun Payload.handleDispatch() {
+    open suspend fun Payload.handleDispatch() {
         when (this.t.toString()) {
             "READY" -> {
                 val ready = json.decodeFromJsonElement<Ready>(this.d!!)
@@ -110,7 +112,7 @@ open class DiscordWebSocketImpl(
                 resumeGatewayUrl = ready.resumeGatewayUrl + "/?v=10&encoding=json"
                 logger.i("Gateway","resume_gateway_url updated to $resumeGatewayUrl")
                 logger.i("Gateway","session_id updated to $sessionId")
-                connected = true
+                _connected.value = true
                 return
             }
             "RESUMED" -> {
@@ -186,7 +188,7 @@ open class DiscordWebSocketImpl(
     }
 
     private fun isSocketConnectedToAccount(): Boolean {
-        return connected && websocket?.isActive == true
+        return _connected.value && websocket?.isActive == true
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -206,24 +208,20 @@ open class DiscordWebSocketImpl(
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         heartbeatJob?.cancel()
         heartbeatJob = null
         this.cancel()
         resumeGatewayUrl = null
         sessionId = null
-        connected = false
-        runBlocking {
-            websocket?.close()
-            logger.e("Gateway","Connection to gateway closed")
-        }
+        _connected.value = false
+        websocket?.close()
+        logger.e("Gateway","Connection to gateway closed")
     }
 
     override suspend fun sendActivity(presence: Presence) {
-        // TODO : Figure out a better way to wait for socket to be connected to account
-        while (!isSocketConnectedToAccount()){
-            delay(10.milliseconds)
-        }
+        // Wait for socket to be connected
+        _connected.first { it }
         logger.i("Gateway","Sending $PRESENCE_UPDATE")
         send(
             op = PRESENCE_UPDATE,
