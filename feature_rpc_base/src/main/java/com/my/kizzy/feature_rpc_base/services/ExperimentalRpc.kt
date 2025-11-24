@@ -43,6 +43,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -106,19 +107,6 @@ class ExperimentalRpc : Service() {
         ForegroundAppDetector.currentForegroundApp?.let { pkg ->
             GetCurrentlyRunningApp.accessibilityServicePackage = pkg
             log("🔄 AccessibilityService (Initial): $pkg")
-        }
-
-        ForegroundAppDetector.onForegroundAppChanged = { pkg ->
-            val isIgnored = pkg.contains("inputmethod", ignoreCase = true) ||
-                           pkg.contains("keyboard", ignoreCase = true) ||
-                           pkg == "com.android.systemui"
-            
-            if (!isIgnored) {
-                GetCurrentlyRunningApp.accessibilityServicePackage = pkg
-                log("🔄 AccessibilityService: $pkg")
-            } else {
-                log("🔄 AccessibilityService (Ignored): $pkg")
-            }
         }
     }
 
@@ -204,42 +192,47 @@ class ExperimentalRpc : Service() {
     private fun startAppDetectionCoroutine() {
         appDetectionJob?.cancel()
         appDetectionJob = scope.launch {
-            log("App detection coroutine started")
-            var currentPackageName = ""
-            var noAppFoundCount = 0
+            log("App detection coroutine started (Reactive Mode)")
             
-            while (isActive) {
-                if (!useAppsRpc) break
+            ForegroundAppDetector.currentAppFlow.collectLatest { pkgName ->
+                if (!useAppsRpc) return@collectLatest
                 
-                // Check for apps
+                if (pkgName == null) {
+                    log("App flow emitted null")
+                    latestAppData = null
+                    decideAndPushRpc()
+                    return@collectLatest
+                }
+
+                // Ignore system apps/keyboard if needed (though AccessibilityService likely filters some already, adding safety)
+                val isIgnored = pkgName.contains("inputmethod", ignoreCase = true) ||
+                               pkgName.contains("keyboard", ignoreCase = true) ||
+                               pkgName == "com.android.systemui"
+
+                if (isIgnored) return@collectLatest
+
+                // Sync with helper
+                GetCurrentlyRunningApp.accessibilityServicePackage = pkgName
+                
+                // Logic to check if enabled
                 val mediaPackages = if (currentMediaController != null) {
                     listOf(currentMediaController!!.packageName)
                 } else emptyList()
                 
                 val appsToCheck = enabledExperimentalApps.filter { !mediaPackages.contains(it) }
-                val currentApp = getCurrentlyRunningApp(filterList = appsToCheck)
                 
-                if (currentApp.name.isNotEmpty() && enabledExperimentalApps.contains(currentApp.packageName)) {
-                    noAppFoundCount = 0
-                    if (currentApp.packageName != currentPackageName) {
-                        currentPackageName = currentApp.packageName
-                        latestAppData = currentApp.copy(time = Timestamps(start = System.currentTimeMillis()))
-                        log("Detected app: ${currentApp.name} (${currentApp.packageName})")
-                        decideAndPushRpc()
-                    }
+                // Direct check instead of calling expensive getCurrentlyRunningApp with UsageStats fallback
+                if (appsToCheck.contains(pkgName)) {
+                    val appData = getCurrentlyRunningApp.createCommonRpcDirect(pkgName)
+                    latestAppData = appData.copy(time = Timestamps(start = System.currentTimeMillis()))
+                    log("Detected app (Reactive): ${appData.name} ($pkgName)")
+                    decideAndPushRpc()
                 } else {
-                    noAppFoundCount++
-                    if (noAppFoundCount >= 3 && currentPackageName.isNotEmpty()) {
-                        log("No app found, clearing...")
-                        currentPackageName = ""
-                        latestAppData = null
-                        getCurrentlyRunningApp.clearCache()
-                        decideAndPushRpc()
-                        noAppFoundCount = 0
-                    }
+                    // App changed to something not enabled
+                    log("App changed to non-enabled: $pkgName")
+                    latestAppData = null
+                    decideAndPushRpc()
                 }
-                
-                delay(1000)
             }
         }
     }
@@ -552,7 +545,6 @@ class ExperimentalRpc : Service() {
             kizzyRPC.closeRPC()
         }
         scope.cancel()
-        ForegroundAppDetector.onForegroundAppChanged = null
         GetCurrentlyRunningApp.accessibilityServicePackage = null
         super.onDestroy()
     }

@@ -3,11 +3,15 @@ package com.my.kizzy.feature_rpc_base.services
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class ForegroundAppDetector : AccessibilityService() {
 
     companion object {
-        var onForegroundAppChanged: ((String) -> Unit)? = null
+        private val _currentAppFlow = MutableStateFlow<String?>(null)
+        val currentAppFlow = _currentAppFlow.asStateFlow()
+
         var currentForegroundApp: String? = null
             private set
         var isRunning: Boolean = false
@@ -31,7 +35,7 @@ class ForegroundAppDetector : AccessibilityService() {
             event.packageName?.toString()?.let { pkg ->
                 if (pkg != currentForegroundApp) {
                     currentForegroundApp = pkg
-                    onForegroundAppChanged?.invoke(pkg)
+                    _currentAppFlow.value = pkg
                 }
             }
         }
@@ -43,5 +47,6 @@ class ForegroundAppDetector : AccessibilityService() {
         super.onDestroy()
         isRunning = false
         currentForegroundApp = null
+        _currentAppFlow.value = null
     }
 }

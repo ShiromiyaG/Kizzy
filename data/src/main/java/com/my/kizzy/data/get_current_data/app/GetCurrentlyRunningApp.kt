@@ -252,7 +252,7 @@ class GetCurrentlyRunningApp @Inject constructor(
         }
     }
 
-    private fun createCommonRpc(packageName: String): CommonRpc {
+    fun createCommonRpcDirect(packageName: String): CommonRpc {
         Objects.requireNonNull(packageName)
         return CommonRpc(
             name = AppUtils.getAppName(packageName),
@@ -261,5 +261,9 @@ class GetCurrentlyRunningApp @Inject constructor(
             largeImage = RpcImage.ApplicationIcon(packageName, context),
             packageName = packageName
         )
+    }
+
+    private fun createCommonRpc(packageName: String): CommonRpc {
+        return createCommonRpcDirect(packageName)
     }
 }
