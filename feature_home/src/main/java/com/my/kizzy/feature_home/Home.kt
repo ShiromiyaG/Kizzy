@@ -9,7 +9,6 @@
 
 package com.my.kizzy.feature_home
 
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +29,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -47,7 +47,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,11 +54,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -92,13 +92,12 @@ fun Home(
     navigateToLogsScreen: () -> Unit,
 ) {
     val ctx = LocalContext.current
-    var timestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var homeItems by remember(features) {
-        mutableStateOf(features)
-    }
+    var homeItems by remember { mutableStateOf(features) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
 
-    var showUpdateDialog by remember {
-        mutableStateOf(false)
+    LaunchedEffect(features) {
+        homeItems = features
     }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -111,14 +110,9 @@ fun Home(
     
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1000)
+        isCheckingUpdate = true
         checkForUpdates()
-    }
-    
-    OnLifecycleEvent { _, event ->
-        when (event) {
-            Lifecycle.Event.ON_RESUME -> timestamp = System.currentTimeMillis()
-            else -> {}
-        }
+        isCheckingUpdate = false
     }
     
     if (showUpdateDialog && state is HomeScreenState.LoadingCompleted) {
@@ -184,71 +178,26 @@ fun Home(
                         }
                     },
                     actions = {
-                        if (showBadge) {
-                            BadgedBox(
-                                badge = {
-                                    Badge(
-                                        modifier = Modifier
-                                            .offset(8.dp, (-14).dp)
-                                            .size(8.dp)
-                                            .clip(CircleShape),
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError,
-                                    )
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Update,
-                                    contentDescription = stringResource(R.string.update),
-                                    modifier = Modifier.clickable {
-                                        Toast.makeText(
-                                            ctx,
-                                            ctx.getString(R.string.update_check_for_update),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                        checkForUpdates()
-                                        showUpdateDialog = true
-                                    }
-                                )
+                        UpdateIcon(
+                            showBadge = showBadge,
+                            isChecking = isCheckingUpdate,
+                            onUpdateClick = {
+                                Toast.makeText(
+                                    ctx,
+                                    ctx.getString(R.string.update_check_for_update),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                isCheckingUpdate = true
+                                checkForUpdates()
+                                showUpdateDialog = true
+                                isCheckingUpdate = false
                             }
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.Update,
-                                contentDescription = stringResource(R.string.update),
-                                modifier = Modifier.clickable {
-                                    Toast.makeText(
-                                        ctx,
-                                        ctx.getString(R.string.update_check_for_update),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    checkForUpdates()
-                                    showUpdateDialog = true
-                                }
-                            )
-                        }
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = { navigateToProfile() }) {
-                            if (user != null) {
-                                AsyncImage(
-                                    model = user.getAvatarImage(),
-                                    modifier = Modifier
-                                        .size(52.dp)
-                                        .border(
-                                            2.dp,
-                                            MaterialTheme.colorScheme.secondaryContainer,
-                                            CircleShape,
-                                        )
-                                        .clip(CircleShape),
-                                    placeholder = painterResource(R.drawable.error_avatar),
-                                    contentDescription = user.username
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Outlined.Person,
-                                    contentDescription = Icons.Default.Person.name,
-                                )
-                            }
-                        }
+                        UserAvatar(
+                            user = user,
+                            onClick = navigateToProfile
+                        )
                     },
                     scrollBehavior = scrollBehavior,
                 )
@@ -266,17 +215,9 @@ fun Home(
                     )
                 }
                 item {
-                    Features(homeItems) {
-                        homeItems = homeItems.mapIndexed { j, item ->
-                            if (it == j) {
-                                item.copy(isChecked = !item.isChecked)
-                            } else {
-                                if (item.isChecked) {
-                                    item.copy(isChecked = false)
-                                } else {
-                                    item
-                                }
-                            }
+                    Features(homeItems) { selectedIndex ->
+                        homeItems = homeItems.mapIndexed { index, item ->
+                            item.copy(isChecked = index == selectedIndex && !item.isChecked)
                         }
                     }
                 }
@@ -286,17 +227,74 @@ fun Home(
 }
 
 @Composable
-fun OnLifecycleEvent(onEvent: (owner: LifecycleOwner, event: Lifecycle.Event) -> Unit) {
-    val eventHandler = rememberUpdatedState(onEvent)
-    val lifecycleOwner = rememberUpdatedState(LocalLifecycleOwner.current)
-    DisposableEffect(lifecycleOwner.value) {
-        val lifecycle = lifecycleOwner.value.lifecycle
-        val observer = LifecycleEventObserver { owner, event ->
-            eventHandler.value(owner, event)
+private fun UpdateIcon(
+    showBadge: Boolean,
+    isChecking: Boolean,
+    onUpdateClick: () -> Unit
+) {
+    val updateDescription = stringResource(R.string.update)
+    
+    if (isChecking) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(24.dp),
+            strokeWidth = 2.dp
+        )
+    } else {
+        val icon = @Composable {
+            Icon(
+                imageVector = Icons.Outlined.Update,
+                contentDescription = updateDescription,
+                modifier = Modifier
+                    .clickable(onClick = onUpdateClick)
+                    .semantics { contentDescription = updateDescription }
+            )
         }
-        lifecycle.addObserver(observer)
-        onDispose {
-            lifecycle.removeObserver(observer)
+        
+        if (showBadge) {
+            BadgedBox(
+                badge = {
+                    Badge(
+                        modifier = Modifier
+                            .offset(8.dp, (-14).dp)
+                            .size(8.dp)
+                            .clip(CircleShape),
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    )
+                }
+            ) { icon() }
+        } else {
+            icon()
+        }
+    }
+}
+
+@Composable
+private fun UserAvatar(
+    user: User?,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick) {
+        if (user != null) {
+            AsyncImage(
+                model = user.getAvatarImage(),
+                modifier = Modifier
+                    .size(52.dp)
+                    .border(
+                        2.dp,
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        CircleShape,
+                    )
+                    .clip(CircleShape),
+                placeholder = painterResource(R.drawable.error_avatar),
+                error = painterResource(R.drawable.error_avatar),
+                contentDescription = stringResource(R.string.profile_picture, user.username ?: "")
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Outlined.Person,
+                contentDescription = stringResource(R.string.profile),
+            )
         }
     }
 }

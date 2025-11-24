@@ -28,9 +28,7 @@ import javax.inject.Inject
 class HomeScreenViewModel @Inject constructor(
     private val checkForUpdateUseCase: CheckForUpdateUseCase
 ): ViewModel() {
-    private val _aboutScreenState: MutableStateFlow<HomeScreenState> = MutableStateFlow(
-        HomeScreenState.Loading
-    )
+    private val _aboutScreenState = MutableStateFlow<HomeScreenState>(HomeScreenState.Loading)
     val aboutScreenState: StateFlow<HomeScreenState> = _aboutScreenState
 
     init {
@@ -39,22 +37,19 @@ class HomeScreenViewModel @Inject constructor(
 
     fun getLatestUpdate() {
         checkForUpdateUseCase().onEach { result ->
-            when(result){
-                is Resource.Success -> {
-                    _aboutScreenState.value =
-                        HomeScreenState.LoadingCompleted(result.data ?: Release())
-                }
-                is Resource.Error -> {
-                    _aboutScreenState.value =
-                        HomeScreenState.Error(result.message ?: "An unexpected error occurred")
-                }
-                is Resource.Loading -> {
-                    _aboutScreenState.value = HomeScreenState.Loading
-                }
+            _aboutScreenState.value = when(result) {
+                is Resource.Success -> HomeScreenState.LoadingCompleted(
+                    result.data ?: Release()
+                )
+                is Resource.Error -> HomeScreenState.Error(
+                    result.message ?: "An unexpected error occurred"
+                )
+                is Resource.Loading -> HomeScreenState.Loading
             }
         }.launchIn(viewModelScope)
     }
-    fun setReleaseFromPrefs(release: Release){
+    
+    fun setReleaseFromPrefs(release: Release) {
         _aboutScreenState.value = HomeScreenState.LoadingCompleted(release)
     }
 }

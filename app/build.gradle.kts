@@ -48,8 +48,13 @@ android {
             )
             ndk {
                 debugSymbolLevel = "SYMBOL_TABLE"
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
             }
         }
+    }
+    
+    buildFeatures {
+        buildConfig = true
     }
 
     bundle {
@@ -64,7 +69,18 @@ android {
         }
     }
 
-    packagingOptions.resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+    packagingOptions {
+        resources.excludes.addAll(listOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "/META-INF/LICENSE*",
+            "/META-INF/NOTICE*",
+            "/META-INF/*.kotlin_module",
+            "**/kotlin/**",
+            "**/*.txt",
+            "**/*.xml",
+            "**/*.properties"
+        ))
+    }
 
     // Disables dependency metadata when building APKs.
     dependenciesInfo {
@@ -79,6 +95,16 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = false
+            excludes += listOf(
+                "**/kotlin/**",
+                "**/*.txt"
+            )
+        }
+        resources {
+            excludes += listOf(
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json"
+            )
         }
     }
 }
