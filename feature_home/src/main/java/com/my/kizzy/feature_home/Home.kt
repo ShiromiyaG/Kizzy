@@ -136,21 +136,19 @@ fun Home(
     
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen,
+        gesturesEnabled = true,
         drawerContent = {
-            if (drawerState.currentValue != DrawerValue.Closed || drawerState.targetValue != DrawerValue.Closed) {
-                ModalDrawerSheet(
-                    modifier = Modifier.width(300.dp)
-                ) {
-                    SettingsDrawer(
-                        user = user,
-                        navigateToProfile = navigateToProfile,
-                        navigateToStyleAndAppearance = navigateToStyleAndAppearance,
-                        navigateToLanguages = navigateToLanguages,
-                        navigateToRpcSettings = navigateToRpcSettings,
-                        navigateToLogsScreen = navigateToLogsScreen
-                    )
-                }
+            ModalDrawerSheet(
+                modifier = Modifier.width(300.dp)
+            ) {
+                SettingsDrawer(
+                    user = user,
+                    navigateToProfile = navigateToProfile,
+                    navigateToStyleAndAppearance = navigateToStyleAndAppearance,
+                    navigateToLanguages = navigateToLanguages,
+                    navigateToRpcSettings = navigateToRpcSettings,
+                    navigateToLogsScreen = navigateToLogsScreen
+                )
             }
         }) {
         Scaffold(
