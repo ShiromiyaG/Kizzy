@@ -16,4 +16,7 @@ dependencies {
     implementation (projects.common.resources)
     implementation (libs.material.icons.extended)
     implementation (libs.blankj.utilcodex)
+    
+    // Markdown renderer for UpdateDialog
+    implementation(libs.compose.markdown)
 }

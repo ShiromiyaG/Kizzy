@@ -18,6 +18,9 @@ android {
             useSupportLibrary = true
         }
         manifestPlaceholders["appName"] = "@string/app_name"
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -71,6 +74,12 @@ android {
         // Disables dependency metadata when building Android App Bundles.
         // This is for the Google Play Store if we ever decide to publish there
         includeInBundle = true
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 dependencies {

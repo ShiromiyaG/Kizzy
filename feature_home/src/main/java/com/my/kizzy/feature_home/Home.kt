@@ -93,7 +93,7 @@ fun Home(
 ) {
     val ctx = LocalContext.current
     var timestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var homeItems by remember(timestamp) {
+    var homeItems by remember(features) {
         mutableStateOf(features)
     }
 
@@ -101,42 +101,26 @@ fun Home(
         mutableStateOf(false)
     }
 
-    var autoCheckDone by remember {
-        mutableStateOf(false)
-    }
-
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val drawerAlpha by remember {
-        androidx.compose.runtime.derivedStateOf {
-            if (drawerState.currentValue == DrawerValue.Closed &&
-                drawerState.targetValue == DrawerValue.Closed
-            ) 0f else 1f
-        }
-    }
     val scrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
             rememberTopAppBarState(),
             canScroll = { true })
     val isCollapsed = scrollBehavior.state.collapsedFraction > 0.55f
+    
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1000)
         checkForUpdates()
     }
-    LaunchedEffect(state) {
-        if (state is HomeScreenState.LoadingCompleted && !autoCheckDone) {
-            kotlinx.coroutines.delay(500)
-            val hasUpdate = state.release.toVersion().whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
-            if (hasUpdate) showUpdateDialog = true
-            autoCheckDone = true
-        }
-    }
+    
     OnLifecycleEvent { _, event ->
         when (event) {
             Lifecycle.Event.ON_RESUME -> timestamp = System.currentTimeMillis()
             else -> {}
         }
     }
+    
     if (showUpdateDialog && state is HomeScreenState.LoadingCompleted) {
         val hasUpdate = state.release.toVersion().whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
         if (hasUpdate) {
@@ -155,22 +139,24 @@ fun Home(
             showUpdateDialog = false
         }
     }
+    
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,
         drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier
-                    .width(300.dp)
-                    .graphicsLayer { alpha = drawerAlpha }
-            ) {
-                SettingsDrawer(
-                    user = user,
-                    navigateToProfile = navigateToProfile,
-                    navigateToStyleAndAppearance = navigateToStyleAndAppearance,
-                    navigateToLanguages = navigateToLanguages,
-                    navigateToRpcSettings = navigateToRpcSettings,
-                    navigateToLogsScreen = navigateToLogsScreen
-                )
+            if (drawerState.currentValue != DrawerValue.Closed || drawerState.targetValue != DrawerValue.Closed) {
+                ModalDrawerSheet(
+                    modifier = Modifier.width(300.dp)
+                ) {
+                    SettingsDrawer(
+                        user = user,
+                        navigateToProfile = navigateToProfile,
+                        navigateToStyleAndAppearance = navigateToStyleAndAppearance,
+                        navigateToLanguages = navigateToLanguages,
+                        navigateToRpcSettings = navigateToRpcSettings,
+                        navigateToLogsScreen = navigateToLogsScreen
+                    )
+                }
             }
         }) {
         Scaffold(
@@ -347,8 +333,9 @@ fun HomeScreenPreview() {
         navigateToProfile = { },
         navigateToStyleAndAppearance = { },
         navigateToLanguages = { },
-        navigateToRpcSettings = { }) {
-    }
+        navigateToRpcSettings = { },
+        navigateToLogsScreen = { }
+    )
 }
 
 val fakeUser = User(

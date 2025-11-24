@@ -16,10 +16,6 @@ internal fun Project.configureAndroidCompose(
             compose = true
         }
 
-        composeOptions {
-            kotlinCompilerExtensionVersion = libs.findVersion("compose.compiler").get().toString()
-        }
-
         dependencies {
             val composeUi = libs.findLibrary("compose.ui").get()
             val composeUiTooling = libs.findLibrary("compose.ui.tooling").get()
