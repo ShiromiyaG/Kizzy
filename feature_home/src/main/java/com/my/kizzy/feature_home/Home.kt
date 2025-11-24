@@ -1,18 +1,14 @@
 /*
- *
- *  ******************************************************************
- *  *  * Copyright (C) 2022
- *  *  * Home.kt is part of Kizzy
- *  *  *  and can not be copied and/or distributed without the express
- *  *  * permission of yzziK(Vaibhav)
- *  *  *****************************************************************
- *
- *
+ * ******************************************************************
+ * * * Copyright (C) 2022
+ * * * Home.kt is part of Kizzy
+ * * * and can not be copied and/or distributed without the express
+ * * * permission of yzziK(Vaibhav)
+ * * *****************************************************************
  */
 
 package com.my.kizzy.feature_home
 
-import android.content.ComponentName
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.border
@@ -76,10 +72,8 @@ import com.my.kizzy.domain.model.user.User
 import com.my.kizzy.feature_home.feature.Features
 import com.my.kizzy.feature_home.feature.HomeFeature
 import com.my.kizzy.feature_home.feature.ToolTipContent
-import com.my.kizzy.feature_rpc_base.services.KizzyTileService
 import com.my.kizzy.feature_settings.SettingsDrawer
 import com.my.kizzy.resources.R
-import com.my.kizzy.ui.components.ChipSection
 import com.my.kizzy.ui.components.UpdateDialog
 import kotlinx.coroutines.launch
 
@@ -91,11 +85,9 @@ fun Home(
     showBadge: Boolean,
     features: List<HomeFeature>,
     user: User?,
-    componentName: ComponentName? = null,
     navigateToProfile: () -> Unit,
     navigateToStyleAndAppearance: () -> Unit,
     navigateToLanguages: () -> Unit,
-    navigateToAbout: () -> Unit,
     navigateToRpcSettings: () -> Unit,
     navigateToLogsScreen: () -> Unit,
 ) {
@@ -104,12 +96,15 @@ fun Home(
     var homeItems by remember(timestamp) {
         mutableStateOf(features)
     }
+
     var showUpdateDialog by remember {
         mutableStateOf(false)
     }
+
     var autoCheckDone by remember {
         mutableStateOf(false)
     }
+
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val drawerAlpha by remember {
@@ -124,12 +119,10 @@ fun Home(
             rememberTopAppBarState(),
             canScroll = { true })
     val isCollapsed = scrollBehavior.state.collapsedFraction > 0.55f
-
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1000)
         checkForUpdates()
     }
-
     LaunchedEffect(state) {
         if (state is HomeScreenState.LoadingCompleted && !autoCheckDone) {
             kotlinx.coroutines.delay(500)
@@ -138,14 +131,12 @@ fun Home(
             autoCheckDone = true
         }
     }
-
     OnLifecycleEvent { _, event ->
         when (event) {
             Lifecycle.Event.ON_RESUME -> timestamp = System.currentTimeMillis()
             else -> {}
         }
     }
-
     if (showUpdateDialog && state is HomeScreenState.LoadingCompleted) {
         val hasUpdate = state.release.toVersion().whetherNeedUpdate(BuildConfig.VERSION_NAME.toVersion())
         if (hasUpdate) {
@@ -154,7 +145,7 @@ fun Home(
                     newVersionPublishDate = publishedAt ?: "",
                     newVersionSize = assets?.getOrNull(0)?.size ?: 0,
                     newVersionLog = body ?: "",
-                    downloadUrl = assets?.firstOrNull { it?.name?.endsWith(".apk") == true }?.browserDownloadUrl 
+                    downloadUrl = assets?.firstOrNull { it?.name?.endsWith(".apk") == true }?.browserDownloadUrl
                         ?: "https://github.com/ShiromiyaG/Kizzy/releases/latest/download/app-release.apk",
                     onDismissRequest = { showUpdateDialog = false }
                 )
@@ -164,7 +155,6 @@ fun Home(
             showUpdateDialog = false
         }
     }
-
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -173,19 +163,14 @@ fun Home(
                     .width(300.dp)
                     .graphicsLayer { alpha = drawerAlpha }
             ) {
-                if (componentName != null) {
-                    SettingsDrawer(
-                        user = user,
-                        showKizzyQuickieRequestItem = !KizzyTileService.tileAdded.value,
-                        componentName = componentName,
-                        navigateToProfile = navigateToProfile,
-                        navigateToStyleAndAppearance = navigateToStyleAndAppearance,
-                        navigateToLanguages = navigateToLanguages,
-                        navigateToAbout = navigateToAbout,
-                        navigateToRpcSettings = navigateToRpcSettings,
-                        navigateToLogsScreen = navigateToLogsScreen
-                    )
-                }
+                SettingsDrawer(
+                    user = user,
+                    navigateToProfile = navigateToProfile,
+                    navigateToStyleAndAppearance = navigateToStyleAndAppearance,
+                    navigateToLanguages = navigateToLanguages,
+                    navigateToRpcSettings = navigateToRpcSettings,
+                    navigateToLogsScreen = navigateToLogsScreen
+                )
             }
         }) {
         Scaffold(
@@ -228,7 +213,7 @@ fun Home(
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Update,
-                                    contentDescription = "Update",
+                                    contentDescription = stringResource(R.string.update),
                                     modifier = Modifier.clickable {
                                         Toast.makeText(
                                             ctx,
@@ -243,7 +228,7 @@ fun Home(
                         } else {
                             Icon(
                                 imageVector = Icons.Outlined.Update,
-                                contentDescription = "Update",
+                                contentDescription = stringResource(R.string.update),
                                 modifier = Modifier.clickable {
                                     Toast.makeText(
                                         ctx,
@@ -288,11 +273,10 @@ fun Home(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    ChipSection()
                     Text(
                         text = stringResource(id = R.string.features),
                         style = MaterialTheme.typography.headlineMedium,
-                        modifier = Modifier.padding(start = 15.dp)
+                        modifier = Modifier.padding(start = 15.dp, top = 15.dp)
                     )
                 }
                 item {
@@ -311,7 +295,6 @@ fun Home(
                     }
                 }
             }
-
         }
     }
 }
@@ -320,13 +303,11 @@ fun Home(
 fun OnLifecycleEvent(onEvent: (owner: LifecycleOwner, event: Lifecycle.Event) -> Unit) {
     val eventHandler = rememberUpdatedState(onEvent)
     val lifecycleOwner = rememberUpdatedState(LocalLifecycleOwner.current)
-
     DisposableEffect(lifecycleOwner.value) {
         val lifecycle = lifecycleOwner.value.lifecycle
         val observer = LifecycleEventObserver { owner, event ->
             eventHandler.value(owner, event)
         }
-
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
@@ -337,6 +318,26 @@ fun OnLifecycleEvent(onEvent: (owner: LifecycleOwner, event: Lifecycle.Event) ->
 @Preview
 @Composable
 fun HomeScreenPreview() {
+    val fakeFeatures = listOf(
+        HomeFeature(
+            title = stringResource(R.string.main_customRpc),
+            icon = R.drawable.ic_rpc_placeholder,
+            shape = RoundedCornerShape(44.dp, 20.dp, 44.dp, 20.dp),
+            tooltipText = ToolTipContent.CUSTOM_RPC_DOCS
+        ),
+        HomeFeature(
+            title = stringResource(R.string.main_consoleRpc),
+            icon = R.drawable.ic_console_games,
+            shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
+            tooltipText = ToolTipContent.CONSOLE_RPC_DOCS
+        ),
+        HomeFeature(
+            title = stringResource(R.string.main_appsRpc),
+            icon = R.drawable.ic_dev_rpc,
+            shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
+            tooltipText = ToolTipContent.EXPERIMENTAL_RPC_DOCS
+        )
+    )
     Home(
         state = HomeScreenState.Loading,
         checkForUpdates = {},
@@ -346,47 +347,9 @@ fun HomeScreenPreview() {
         navigateToProfile = { },
         navigateToStyleAndAppearance = { },
         navigateToLanguages = { },
-        navigateToAbout = { },
         navigateToRpcSettings = { }) {
-
     }
 }
-
-val fakeFeatures = listOf(
-    HomeFeature(
-        title = "App Detection",
-        icon = R.drawable.ic_apps,
-        shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
-        tooltipText = ToolTipContent.APP_DETECTION_DOCS
-    ), HomeFeature(
-        title = "Media RPC",
-        icon = R.drawable.ic_media_rpc,
-        shape = RoundedCornerShape(44.dp, 20.dp, 44.dp, 20.dp),
-        tooltipText = ToolTipContent.MEDIA_RPC_DOCS
-    ), HomeFeature(
-        title = "Custom RPC",
-        icon = R.drawable.ic_rpc_placeholder,
-        shape = RoundedCornerShape(44.dp, 20.dp, 44.dp, 20.dp),
-        tooltipText = ToolTipContent.CUSTOM_RPC_DOCS
-    ), HomeFeature(
-        title = "Console RPC",
-        icon = R.drawable.ic_console_games,
-        shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
-        tooltipText = ToolTipContent.CONSOLE_RPC_DOCS
-    ),
-    HomeFeature(
-        title = "Experimental RPC",
-        icon = R.drawable.ic_dev_rpc,
-        shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
-        tooltipText = ToolTipContent.EXPERIMENTAL_RPC_DOCS
-    ),
-    HomeFeature(
-        title = "Coming Soon",
-        icon = R.drawable.ic_info,
-        shape = RoundedCornerShape(20.dp, 44.dp, 20.dp, 44.dp),
-        showSwitch = false
-    )
-)
 
 val fakeUser = User(
     accentColor = null,

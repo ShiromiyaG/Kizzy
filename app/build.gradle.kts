@@ -83,8 +83,6 @@ dependencies {
     implementation (projects.featureSettings)
     implementation (projects.featureLogs)
     implementation (projects.featureRpcBase)
-    implementation (projects.featureAppsRpc)
-    implementation (projects.featureMediaRpc)
     implementation (projects.featureConsoleRpc)
     implementation (projects.featureCustomRpc)
     implementation (projects.featureExperimentalRpc)

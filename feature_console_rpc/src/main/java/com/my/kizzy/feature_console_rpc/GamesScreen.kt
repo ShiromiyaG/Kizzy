@@ -1,13 +1,10 @@
 /*
- *
- *  ******************************************************************
- *  *  * Copyright (C) 2022
- *  *  * GamesScreen.kt is part of Kizzy
- *  *  *  and can not be copied and/or distributed without the express
- *  *  * permission of yzziK(Vaibhav)
- *  *  *****************************************************************
- *
- *
+ * ******************************************************************
+ * * * Copyright (C) 2022
+ * * * GamesScreen.kt is part of Kizzy
+ * * * and can not be copied and/or distributed without the express
+ * * * permission of yzziK(Vaibhav)
+ * * *****************************************************************
  */
 
 package com.my.kizzy.feature_console_rpc
@@ -60,10 +57,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.my.kizzy.domain.model.Game
 import com.my.kizzy.domain.model.rpc.RpcConfig
-import com.my.kizzy.feature_rpc_base.services.AppDetectionService
 import com.my.kizzy.feature_rpc_base.services.CustomRpcService
 import com.my.kizzy.feature_rpc_base.services.ExperimentalRpc
-import com.my.kizzy.feature_rpc_base.services.MediaRpcService
 import com.my.kizzy.preference.Prefs
 import com.my.kizzy.resources.R
 import com.my.kizzy.ui.components.BackButton
@@ -86,13 +81,12 @@ fun GamesScreen(
     var selected by remember {
         mutableStateOf("")
     }
-
     val context = LocalContext.current
     var isConsoleRpcRunning by remember {
         mutableStateOf(serviceEnabled)
     }
-    var searchText by remember { mutableStateOf("") }
 
+    var searchText by remember { mutableStateOf("") }
     val intent = Intent(context, CustomRpcService::class.java)
     Scaffold(
         Modifier.fillMaxSize(),
@@ -150,7 +144,6 @@ fun GamesScreen(
                         }
                     }
                 }
-
                 GamesState.Loading -> {
                     Column(
                         Modifier
@@ -162,7 +155,6 @@ fun GamesScreen(
                         }
                     }
                 }
-
                 is GamesState.Success -> {
                     Column(
                         Modifier
@@ -179,28 +171,16 @@ fun GamesScreen(
                                     if (intent.hasExtra("RPC")) {
                                         Prefs[Prefs.LAST_RUN_CONSOLE_RPC] =
                                             intent.getStringExtra("RPC")
-                                        context.stopService(
-                                            Intent(
-                                                context,
-                                                AppDetectionService::class.java
-                                            )
-                                        )
-                                        context.stopService(
-                                            Intent(
-                                                context,
-                                                MediaRpcService::class.java
-                                            )
-                                        )
-                                        context.stopService(
-                                            Intent(
-                                                context,
-                                                ExperimentalRpc::class.java
-                                            )
-                                        )
-                                        context.startService(intent)
                                     }
+                                    // Para outros serviços que podem estar rodando
+                                    context.stopService(
+                                        Intent(
+                                            context,
+                                            ExperimentalRpc::class.java
+                                        )
+                                    )
+                                    context.startService(intent)
                                 }
-
                                 false -> context.stopService(
                                     Intent(
                                         context,
@@ -291,7 +271,6 @@ fun SingleChoiceGameItem(
                     )
                 }
             }
-
             Column(
                 modifier = Modifier
                     .weight(9f)
@@ -342,6 +321,7 @@ fun GamesScreenPreview() {
         serviceEnabled = false
     )
 }
+
 @Preview
 @Composable
 fun GamesScreenPreview2() {
@@ -353,6 +333,7 @@ fun GamesScreenPreview2() {
         serviceEnabled = false
     )
 }
+
 @Preview
 @Composable
 fun GamesScreenPreview3() {
@@ -366,6 +347,7 @@ fun GamesScreenPreview3() {
         serviceEnabled = false
     )
 }
+
 @Preview
 @Composable
 fun GamesScreenPreview4() {
@@ -377,6 +359,7 @@ fun GamesScreenPreview4() {
         serviceEnabled = true
     )
 }
+
 @Preview
 @Composable
 fun GamesScreenPreview5() {
@@ -388,6 +371,7 @@ fun GamesScreenPreview5() {
         serviceEnabled = true
     )
 }
+
 @Preview
 @Composable
 fun GamesScreenPreview6() {

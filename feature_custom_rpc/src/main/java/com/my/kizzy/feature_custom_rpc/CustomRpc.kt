@@ -1,13 +1,10 @@
 /*
- *
- *  ******************************************************************
- *  *  * Copyright (C) 2022
- *  *  * CustomRpc.kt is part of Kizzy
- *  *  *  and can not be copied and/or distributed without the express
- *  *  * permission of yzziK(Vaibhav)
- *  *  *****************************************************************
- *
- *
+ * ******************************************************************
+ * * * Copyright (C) 2022
+ * * * CustomRpc.kt is part of Kizzy
+ * * * and can not be copied and/or distributed without the express
+ * * * permission of yzziK(Vaibhav)
+ * * *****************************************************************
  */
 
 package com.my.kizzy.feature_custom_rpc
@@ -72,10 +69,8 @@ import com.my.kizzy.feature_custom_rpc.components.sheet.SaveConfigDialog
 import com.my.kizzy.feature_custom_rpc.components.sheet.ShareConfig
 import com.my.kizzy.feature_custom_rpc.components.sheet.dataToString
 import com.my.kizzy.feature_rpc_base.AppUtils
-import com.my.kizzy.feature_rpc_base.services.AppDetectionService
 import com.my.kizzy.feature_rpc_base.services.CustomRpcService
 import com.my.kizzy.feature_rpc_base.services.ExperimentalRpc
-import com.my.kizzy.feature_rpc_base.services.MediaRpcService
 import com.my.kizzy.preference.Prefs
 import com.my.kizzy.resources.R
 import com.my.kizzy.ui.components.BackButton
@@ -98,11 +93,13 @@ fun CustomRPC(
         snackBarHostState = snackBarHostState,
         state = state
     )
+
     if (state.showBottomSheet) {
         BottomSheet(onEvent = onEvent, onDismiss = {
             onEvent(UiEvent.TriggerBottomSheet)
         })
     }
+
     if (state.showLoadDialog) {
         LoadConfig(
             onDismiss = {
@@ -110,21 +107,22 @@ fun CustomRPC(
             },
             onConfigSelected = {
                 onEvent(UiEvent.SetFieldsFromConfig(it))
-            }
-        )
+            })
     }
+
     if (state.showShareDialog) {
         ShareConfig(
             onDismiss = {
                 onEvent(UiEvent.SheetEvent.TriggerShareDialog)
-            }
-        )
+            })
     }
+
     if (state.showStoragePermissionRequestDialog) {
         RequestStoragePermissionDialog(
             onDismiss = { onEvent(UiEvent.SheetEvent.TriggerStoragePermissionRequest) }
         )
     }
+
     if (state.showSaveDialog) {
         SaveConfigDialog(
             rpc = state.rpcConfig,
@@ -133,9 +131,9 @@ fun CustomRPC(
                 scope.launch {
                     snackBarHostState.showSnackbar(it)
                 }
-            }
-        )
+            })
     }
+
     if (state.showDeleteDialog) {
         DeleteConfigDialog(
             onDismiss = {
@@ -145,9 +143,9 @@ fun CustomRPC(
                 scope.launch {
                     snackBarHostState.showSnackbar(it)
                 }
-            }
-        )
+            })
     }
+
     if (state.showPreviewDialog) {
         val json = Prefs[Prefs.USER_DATA, "{}"]
         val user = Json.decodeFromString<User>(json)
@@ -168,13 +166,11 @@ fun CustomRpcScreen(
     state: UiState,
     onBackPressed: () -> Unit,
     onEvent: (UiEvent) -> Unit,
-
-    ) {
+) {
     val scrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
             rememberTopAppBarState(),
             canScroll = { true })
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackBarHostState) },
         modifier = Modifier
@@ -220,6 +216,7 @@ private fun RpcTextFieldsColumn(
     var isCustomRpcEnabled by remember {
         mutableStateOf(AppUtils.customRpcRunning())
     }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -231,8 +228,7 @@ private fun RpcTextFieldsColumn(
                 isCustomRpcEnabled = !isCustomRpcEnabled
                 when (isCustomRpcEnabled) {
                     true -> {
-                        context.stopService(Intent(context, AppDetectionService::class.java))
-                        context.stopService(Intent(context, MediaRpcService::class.java))
+                        // Para o ExperimentalRpc se estiver rodando
                         context.stopService(Intent(context, ExperimentalRpc::class.java))
                         val intent = Intent(context, CustomRpcService::class.java)
                         val string = uiState.rpcConfig.dataToString()
@@ -245,6 +241,7 @@ private fun RpcTextFieldsColumn(
                 }
             }
         }
+
         with(uiState.rpcConfig) {
             item {
                 RpcField(
@@ -277,26 +274,25 @@ private fun RpcTextFieldsColumn(
                         label = R.string.party_current,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         isError =
-                            partyCurrentSize.isNotEmpty() && (
-                                    partyCurrentSize.toIntOrNull() == null ||
-                                            0 >= partyCurrentSize.toInt() ||
-                                            (partyMaxSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt())
-                                    ),
+                        partyCurrentSize.isNotEmpty() && (
+                                partyCurrentSize.toIntOrNull() == null ||
+                                        0 >= partyCurrentSize.toInt() ||
+                                        (partyMaxSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt())
+                                ),
                         errorMessage =
-                            if (partyCurrentSize.isNotEmpty()) {
-                                if (partyCurrentSize.toIntOrNull() == null) {
-                                    stringResource(R.string.party_invalid_number)
-                                } else if (0 >= partyCurrentSize.toInt()) {
-                                    stringResource(R.string.party_less_than_zero)
-                                } else if (partyMaxSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt()) {
-                                    stringResource(R.string.party_greater_than_max)
-                                } else {
-                                    ""
-                                }
+                        if (partyCurrentSize.isNotEmpty()) {
+                            if (partyCurrentSize.toIntOrNull() == null) {
+                                stringResource(R.string.party_invalid_number)
+                            } else if (0 >= partyCurrentSize.toInt()) {
+                                stringResource(R.string.party_less_than_zero)
+                            } else if (partyMaxSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt()) {
+                                stringResource(R.string.party_greater_than_max)
                             } else {
                                 ""
                             }
-
+                        } else {
+                            ""
+                        }
                     ) {
                         onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(partyCurrentSize = it)))
                     }
@@ -310,27 +306,27 @@ private fun RpcTextFieldsColumn(
                         label = R.string.party_max,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         isError =
-                            partyMaxSize.isNotEmpty() && (
-                                    partyMaxSize.toIntOrNull() == null ||
-                                            0 >= partyMaxSize.toInt() ||
-                                            (partyCurrentSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt())
-                                    ),
+                        partyMaxSize.isNotEmpty() && (
+                                partyMaxSize.toIntOrNull() == null ||
+                                        0 >= partyMaxSize.toInt() ||
+                                        (partyCurrentSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt())
+                                ),
                         errorMessage =
-                            if (partyMaxSize.isNotEmpty()) {
-                                if (partyMaxSize.toIntOrNull() == null) {
-                                    stringResource(R.string.party_invalid_number)
-                                } else if (0 >= partyMaxSize.toInt()) {
-                                    stringResource(R.string.party_less_than_zero)
-                                } else if (partyCurrentSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt()) {
-                                    stringResource(R.string.party_greater_than_max)
-                                } else {
-                                    ""
-                                }
-                            } else if (partyCurrentSize.isNotEmpty() && partyMaxSize.isBlank()) {
-                                stringResource(R.string.party_max_cannot_be_empty)
+                        if (partyMaxSize.isNotEmpty()) {
+                            if (partyMaxSize.toIntOrNull() == null) {
+                                stringResource(R.string.party_invalid_number)
+                            } else if (0 >= partyMaxSize.toInt()) {
+                                stringResource(R.string.party_less_than_zero)
+                            } else if (partyCurrentSize.toIntOrNull() != null && partyCurrentSize.toInt() > partyMaxSize.toInt()) {
+                                stringResource(R.string.party_greater_than_max)
                             } else {
                                 ""
                             }
+                        } else if (partyCurrentSize.isNotEmpty() && partyMaxSize.isBlank()) {
+                            stringResource(R.string.party_max_cannot_be_empty)
+                        } else {
+                            ""
+                        }
                     ) {
                         onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(partyMaxSize = it)))
                     }
@@ -445,8 +441,7 @@ private fun RpcTextFieldsColumn(
                                 )
                             }
                         }
-                    }
-                ) {
+                    }) {
                     onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(platform = it)))
                 }
             }
@@ -488,8 +483,7 @@ private fun RpcTextFieldsColumn(
                                 )
                             }
                         }
-                    }
-                ) {
+                    }) {
                     onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(status = it)))
                 }
             }
@@ -503,6 +497,7 @@ private fun RpcTextFieldsColumn(
                     onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(button1 = it)))
                 }
             }
+
             item {
                 AnimatedVisibility(visible = button1.isNotBlank()) {
                     RpcField(
@@ -534,13 +529,16 @@ private fun RpcTextFieldsColumn(
                     }
                 }
             }
+
             item {
                 var openPickerDialog by remember {
                     mutableStateOf(false)
                 }
+
                 var showProgress by remember {
                     mutableStateOf(false)
                 }
+
                 RpcField(
                     value = largeImg,
                     label = R.string.activity_large_image,
@@ -569,6 +567,7 @@ private fun RpcTextFieldsColumn(
                     onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(largeImg = it)))
                 }
             }
+
             item {
                 AnimatedVisibility(visible = largeImg.isNotBlank()) {
                     RpcField(
@@ -579,13 +578,16 @@ private fun RpcTextFieldsColumn(
                     }
                 }
             }
+
             item {
                 var openPickerDialog by remember {
                     mutableStateOf(false)
                 }
+
                 var showProgress by remember {
                     mutableStateOf(false)
                 }
+
                 RpcField(
                     value = smallImg,
                     label = R.string.activity_small_image,
@@ -614,6 +616,7 @@ private fun RpcTextFieldsColumn(
                     onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(smallImg = it)))
                 }
             }
+
             item {
                 AnimatedVisibility(visible = smallImg.isNotBlank()) {
                     RpcField(
@@ -624,6 +627,7 @@ private fun RpcTextFieldsColumn(
                     }
                 }
             }
+
             val icon = if (uiState.activityTypeIsExpanded)
                 Icons.Default.KeyboardArrowUp
             else
@@ -663,6 +667,7 @@ private fun RpcTextFieldsColumn(
                     }
                 }
             }
+
             item {
                 AnimatedVisibility(visible = type == "1") {
                     val streamUrlInfoText = stringResource(id = R.string.stream_url_info)
@@ -685,6 +690,9 @@ private fun RpcTextFieldsColumn(
                         onEvent(UiEvent.SetFieldsFromConfig(uiState.rpcConfig.copy(url = it)))
                     }
                 }
+            }
+
+            item {
                 Spacer(modifier = Modifier.size(100.dp))
             }
         }

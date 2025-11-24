@@ -24,8 +24,6 @@ class Routes {
         const val PROFILE = "profile"
 
         /* Rpc Screens */
-        const val APPS_DETECTION = "apps_rpc"
-        const val MEDIA_RPC = "media_rpc"
         const val CUSTOM_RPC = "custom_rpc"
         const val CONSOLE_RPC = "console_rpc"
         const val EXPERIMENTAL_RPC = "experimental_rpc"
