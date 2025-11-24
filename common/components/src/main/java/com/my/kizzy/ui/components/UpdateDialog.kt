@@ -175,25 +175,33 @@ private fun downloadApk(context: Context, url: String): Long {
 
 private fun installApk(context: Context, downloadId: Long) {
     val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    val uri = downloadManager.getUriForDownloadedFile(downloadId)
-    if (uri != null) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            val apkFile = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Kizzy-update.apk")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val apkUri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    apkFile
-                )
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } else {
-                setDataAndType(Uri.fromFile(apkFile), "application/vnd.android.package-archive")
+    val query = DownloadManager.Query().setFilterById(downloadId)
+    val cursor = downloadManager.query(query)
+
+    if (cursor.moveToFirst()) {
+        val localUriString = cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
+        if (localUriString != null) {
+            val localUri = Uri.parse(localUriString)
+            val file = File(localUri.path!!)
+            
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    val apkUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        file
+                    )
+                    setDataAndType(apkUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } else {
+                    setDataAndType(Uri.fromFile(file), "application/vnd.android.package-archive")
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
-        context.startActivity(intent)
     }
+    cursor.close()
 }
 
 @Preview
