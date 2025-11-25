@@ -23,6 +23,7 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.IBinder
+import com.my.kizzy.data.get_current_data.app.ForegroundAppStateHolder
 import com.my.kizzy.data.get_current_data.app.GetCurrentlyRunningApp
 import com.my.kizzy.data.get_current_data.media.GetCurrentPlayingMediaAll
 import com.my.kizzy.data.get_current_data.media.RichMediaMetadata
@@ -87,6 +88,10 @@ class ExperimentalRpc : Service() {
     @Inject
     lateinit var notificationBuilder: Notification.Builder
 
+    @Inject
+    lateinit var foregroundAppStateHolder: ForegroundAppStateHolder
+
+
     private lateinit var mediaSessionManager: MediaSessionManager
 
     private var currentMediaController: MediaController? = null
@@ -113,11 +118,9 @@ class ExperimentalRpc : Service() {
         super.onCreate()
         log("EXPERIMENTAL RPC SERVICE CREATED")
         
-        // Initialize with current value if available
-        ForegroundAppDetector.currentForegroundApp?.let { pkg ->
-            GetCurrentlyRunningApp.accessibilityServicePackage = pkg
-            log("🔄 AccessibilityService (Initial): $pkg")
-        }
+        // Initialize with current value from holder if needed, 
+        // or better, just let the flow collection handle it.
+        // If the holder persists state, we are good.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -211,7 +214,7 @@ class ExperimentalRpc : Service() {
         appDetectionJob = scope.launch {
             log("App detection coroutine started (Reactive Mode)")
             
-            ForegroundAppDetector.currentAppFlow.collectLatest { pkgName ->
+            foregroundAppStateHolder.currentPackage.collectLatest { pkgName ->
                 if (!useAppsRpc) return@collectLatest
                 
                 if (pkgName == null) {
@@ -226,9 +229,6 @@ class ExperimentalRpc : Service() {
                     IGNORED_PACKAGE_KEYWORDS.any { pkgName.contains(it, ignoreCase = true) }
 
                 if (isIgnored) return@collectLatest
-
-                // Sync with helper
-                GetCurrentlyRunningApp.accessibilityServicePackage = pkgName
                 
                 // Logic to check if enabled
                 val mediaPackages = if (currentMediaController != null) {
@@ -570,7 +570,6 @@ class ExperimentalRpc : Service() {
         }.invokeOnCompletion {
             scope.cancel()
         }
-        GetCurrentlyRunningApp.accessibilityServicePackage = null
         super.onDestroy()
     }
 

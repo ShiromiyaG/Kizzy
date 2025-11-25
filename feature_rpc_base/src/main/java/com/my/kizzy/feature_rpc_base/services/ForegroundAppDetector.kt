@@ -2,63 +2,121 @@ package com.my.kizzy.feature_rpc_base.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 
-/**
- * AccessibilityService that detects the currently running foreground app.
- * Emits package name changes via [currentAppFlow] for reactive consumers.
- */
+import com.my.kizzy.data.get_current_data.app.ForegroundAppStateHolder
+
 class ForegroundAppDetector : AccessibilityService() {
 
     companion object {
         private const val TAG = "ForegroundAppDetector"
-        
-        private val _currentAppFlow = MutableStateFlow<String?>(null)
-        
-        /** Flow that emits the current foreground app's package name */
-        val currentAppFlow: StateFlow<String?> = _currentAppFlow.asStateFlow()
-
-        /** Current foreground app package name (nullable) */
-        var currentForegroundApp: String? = null
-            private set
-            
-        /** Whether this accessibility service is currently running */
-        var isRunning: Boolean = false
-            private set
+        private const val DEBOUNCE_MS = 100L
     }
 
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        isRunning = true
-        serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or 
-                    AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            notificationTimeout = 0
-        }
+    // EntryPoint para acessar dependências Hilt
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ForegroundAppDetectorEntryPoint {
+        fun stateHolder(): ForegroundAppStateHolder
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            event.packageName?.toString()?.let { pkg ->
-                if (pkg != currentForegroundApp) {
-                    currentForegroundApp = pkg
-                    _currentAppFlow.value = pkg
-                }
+    // Lazy initialization - só acessa após service estar conectado
+    private val stateHolder: ForegroundAppStateHolder by lazy {
+        EntryPointAccessors.fromApplication(
+            applicationContext,
+            ForegroundAppDetectorEntryPoint::class.java
+        ).stateHolder()
+    }
+    
+    private val handler = Handler(Looper.getMainLooper())
+    private var pendingPackage: String? = null
+    private var lastEventTime = 0L
+    
+    private val emitRunnable = Runnable {
+        pendingPackage?.let { pkg ->
+            if (pkg != stateHolder.get()) {
+                log("📱 App changed: ${stateHolder.get()} -> $pkg")
+                stateHolder.update(pkg)
             }
         }
     }
 
-    override fun onInterrupt() {}
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        
+        serviceInfo = serviceInfo.apply {
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            flags = AccessibilityServiceInfo.DEFAULT
+            notificationTimeout = 50L
+        }
+        
+        log("🟢 Service connected")
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        try {
+            processEvent(event)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing event", e)
+        }
+    }
+    
+    private fun processEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg.shouldBeIgnored()) return
+        
+        val now = System.currentTimeMillis()
+        pendingPackage = pkg
+        handler.removeCallbacks(emitRunnable)
+        
+        if (now - lastEventTime > DEBOUNCE_MS) {
+            emitRunnable.run()
+        } else {
+            handler.postDelayed(emitRunnable, DEBOUNCE_MS)
+        }
+        
+        lastEventTime = now
+    }
+    
+    private fun String.shouldBeIgnored(): Boolean {
+        return this in IGNORED_PACKAGES || 
+               IGNORED_PATTERNS.any { contains(it, ignoreCase = true) }
+    }
+
+    override fun onInterrupt() {
+        log("⚠️ Service interrupted")
+    }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        log("🔴 Service destroyed")
         super.onDestroy()
-        isRunning = false
-        currentForegroundApp = null
-        _currentAppFlow.value = null
+    }
+    
+    private fun log(message: String) {
+        Log.d(TAG, message)
     }
 }
+
+// Constantes fora da classe para evitar recriação
+private val IGNORED_PACKAGES = setOf(
+    "com.android.systemui",
+    "android",
+)
+
+private val IGNORED_PATTERNS = listOf(
+    "inputmethod",
+    "keyboard", 
+    "launcher",
+    ".ime.",
+)

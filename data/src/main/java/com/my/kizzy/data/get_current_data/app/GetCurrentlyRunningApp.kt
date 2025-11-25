@@ -28,14 +28,8 @@ import javax.inject.Inject
 
 class GetCurrentlyRunningApp @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val foregroundAppStateHolder: ForegroundAppStateHolder
 ) {
-    companion object {
-        private val _accessibilityServicePackage = AtomicReference<String?>(null)
-        var accessibilityServicePackage: String?
-            get() = _accessibilityServicePackage.get()
-            set(value) = _accessibilityServicePackage.set(value)
-    }
-
     private data class CachedApp(val packageName: String, val timestamp: Long)
     private val cachedApp = AtomicReference<CachedApp?>(null)
 
@@ -49,7 +43,7 @@ class GetCurrentlyRunningApp @Inject constructor(
         filterList: List<String> = emptyList()
     ): CommonRpc {
         // PRIORITY 1: Use AccessibilityService if available
-        val accessPkg = accessibilityServicePackage
+        val accessPkg = foregroundAppStateHolder.get()
         android.util.Log.e("GetCurrentlyRunningApp", "Invoke called. AccessPkg: $accessPkg, FilterList size: ${filterList.size}")
 
         accessPkg?.let { pkg ->
