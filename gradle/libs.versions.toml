@@ -3,7 +3,7 @@
 gradle = "8.7.3"
 kotlin = "2.1.0"
 ksp = "2.1.0-1.0.29"
-version-name = "6.8"
+version-name = "6.9"
 version-code ="13"
 
 # app level

@@ -111,10 +111,13 @@
     <string name="main_customRpc">RPC Custom</string>
     <string name="main_consoleRpc">RPC de Console</string>
     <string name="main_consoleRpc_details">O Kizzy te permite usar algumas predefinições para definir sua atividade no Discord.</string>
-    <string name="main_experimentalRpc">RPC Experimental</string>
-    <string name="main_experimentalRpc_details">O RPC Experimental é um recurso do Kizzy que alterna constantemente entre RPCs de apps e RPCs de mídia.</string>
+    <string name="main_experimentalRpc">RPC de Apps</string>
+    <string name="main_experimentalRpc_details">O RPC de Apps é um recurso do Kizzy que alterna constantemente entre RPCs de apps e RPCs de mídia.</string>
     <string name="main_customRpc_details">O Kizzy te permite criar seu próprio rich presence completamente personalizável para o Discord.</string>
     <string name="main_comingSoon">Em breve</string>
+    <string name="accessibility_enhanced_detection_title">⚠️ Detecção Melhorada Disponível</string>
+    <string name="accessibility_enhanced_detection_desc">Ative o serviço de acessibilidade para detecção instantânea de apps.</string>
+    <string name="open_settings">Abrir Configurações</string>
     <string name="exit">Sair</string>
     <string name="logs">Logs</string>
     <string name="drawer_subtitle_help">AJUDA</string>

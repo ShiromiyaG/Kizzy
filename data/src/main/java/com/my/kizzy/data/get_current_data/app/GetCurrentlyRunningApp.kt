@@ -1,28 +1,16 @@
-/*
- *
- *  ******************************************************************
- *  *  * Copyright (C) 2022
- *  *  * GetAppsUseCase.kt is part of Kizzy
- *  *  *  and can not be copied and/or distributed without the express
- *  *  * permission of yzziK(Vaibhav)
- *  *  *****************************************************************
- *
- *
- */
-
 package com.my.kizzy.data.get_current_data.app
 
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStats
+import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.os.Build
+import android.os.Process
+import android.util.Log
 import com.blankj.utilcode.util.AppUtils
 import com.my.kizzy.data.rpc.CommonRpc
 import com.my.kizzy.data.rpc.RpcImage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Objects
-import java.util.SortedMap
-import java.util.TreeMap
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 
@@ -30,215 +18,311 @@ class GetCurrentlyRunningApp @Inject constructor(
     @ApplicationContext private val context: Context,
     private val foregroundAppStateHolder: ForegroundAppStateHolder
 ) {
-    private data class CachedApp(val packageName: String, val timestamp: Long)
+    companion object {
+        private const val TAG = "GetCurrentlyRunningApp"
+        
+        // Tempo máximo que consideramos um app como "ainda em foreground"
+        private const val FOREGROUND_THRESHOLD_MS = 30_000L  // 30 segundos
+        
+        // Tempo para considerar cache válido quando app está "estável"
+        private const val CACHE_EXTENDED_MS = 120_000L  // 2 minutos
+
+        private val IGNORED_PACKAGES = setOf(
+            "com.android.systemui",
+            "android",
+            "com.my.kizzy",
+            "com.my.kizzy.debug"
+        )
+
+        private val IGNORED_PATTERNS = listOf(
+            "inputmethod", "keyboard", ".ime."
+        )
+
+        private val LAUNCHER_PATTERNS = listOf(
+            "launcher",
+            "com.miui.home",
+            "trebuchet",
+            "lawnchair",
+            "nova",
+            "oneplus.launcher",
+            "sec.android.app.launcher",
+            "huawei.android.launcher",
+            "oppo.launcher",
+            "vivo.launcher",
+            "realme.launcher"
+        )
+    }
+
+    private data class CachedApp(val packageName: String, val lastSeenTime: Long)
     private val cachedApp = AtomicReference<CachedApp?>(null)
+    
+    // Guarda o timestamp da última vez que vimos o launcher
+    private var lastLauncherTime = 0L
 
     fun clearCache() {
-        android.util.Log.e("GetCurrentlyRunningApp", "🗑️ Cache cleared manually")
         cachedApp.set(null)
+        lastLauncherTime = 0L
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        return try {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    context.packageName
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    Process.myUid(),
+                    context.packageName
+                )
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            false
+        }
     }
 
     operator fun invoke(
-        beginTime: Long = System.currentTimeMillis() - 30000,
+        beginTime: Long = System.currentTimeMillis() - 60000,
         filterList: List<String> = emptyList()
     ): CommonRpc {
-        // PRIORITY 1: Use AccessibilityService if available
+        val currentTime = System.currentTimeMillis()
+
+        Log.d(TAG, "════════════════════════════════════════")
+
+        // ═══════════════════════════════════════════════════════════
+        // 1. AccessibilityService (prioridade máxima)
+        // ═══════════════════════════════════════════════════════════
         val accessPkg = foregroundAppStateHolder.get()
-        android.util.Log.e("GetCurrentlyRunningApp", "Invoke called. AccessPkg: $accessPkg, FilterList size: ${filterList.size}")
+        Log.d(TAG, "🔍 Accessibility: ${accessPkg ?: "NULL"}")
 
-        accessPkg?.let { pkg ->
-            val inFilter = filterList.isEmpty() || filterList.contains(pkg)
-            val isLauncher = pkg.contains("launcher", ignoreCase = true)
-            val isSystemUI = pkg == "com.android.systemui" || pkg == "com.my.kizzy"
-            android.util.Log.e("GetCurrentlyRunningApp", "Checking AccessPkg: $pkg, inFilter: $inFilter, isLauncher: $isLauncher")
-
-            // Se detectou launcher ou app fora do filtro, limpar cache
-            if (isLauncher || (!inFilter && !isSystemUI)) {
-                val cached = cachedApp.get()
-                if (cached != null) {
-                    android.util.Log.e("GetCurrentlyRunningApp", "🚨 App closed/switched, clearing cache (was: ${cached.packageName})")
-                    cachedApp.set(null)
-                }
-                return CommonRpc()
-            }
-
-            if (inFilter) {
-                android.util.Log.e("GetCurrentlyRunningApp", "✅ Using AccessibilityService: $pkg")
-                cachedApp.set(CachedApp(pkg, System.currentTimeMillis()))
-                return createCommonRpcDirect(pkg)
-            }
+        if (accessPkg != null) {
+            val result = handleAccessibilityPackage(accessPkg, filterList, currentTime)
+            if (result != null) return result
         }
 
-        val usageStatsManager =
-            context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val currentTimeMillis = System.currentTimeMillis()
+        // ═══════════════════════════════════════════════════════════
+        // 2. UsageStats
+        // ═══════════════════════════════════════════════════════════
+        if (hasUsageStatsPermission()) {
+            val statsResult = analyzeUsageStats(filterList, currentTime)
+            if (statsResult != null) return statsResult
+        }
 
-        if (filterList.isNotEmpty()) {
-            // Use a large single window to capture all events including old MOVE_TO_BACKGROUND
-            val queryWindow = 300000L // 5 minutes
+        // ═══════════════════════════════════════════════════════════
+        // 3. Nenhum app encontrado
+        // ═══════════════════════════════════════════════════════════
+        Log.d(TAG, "❌ No app found")
+        Log.d(TAG, "════════════════════════════════════════")
+        return CommonRpc()
+    }
 
-            val events = usageStatsManager.queryEvents(
-                currentTimeMillis - queryWindow,
-                currentTimeMillis
+    private fun handleAccessibilityPackage(
+        pkg: String,
+        filterList: List<String>,
+        currentTime: Long
+    ): CommonRpc? {
+        if (pkg.isLauncher()) {
+            Log.d(TAG, "🏠 Launcher via Accessibility")
+            cachedApp.set(null)
+            lastLauncherTime = currentTime
+            return CommonRpc()
+        }
+
+        if (pkg.shouldBeIgnored()) {
+            val cached = cachedApp.get()
+            if (cached != null && (filterList.isEmpty() || filterList.contains(cached.packageName))) {
+                return createCommonRpcDirect(cached.packageName)
+            }
+            return null
+        }
+
+        if (filterList.isEmpty() || filterList.contains(pkg)) {
+            Log.d(TAG, "✅ Accessibility: $pkg")
+            cachedApp.set(CachedApp(pkg, currentTime))
+            return createCommonRpcDirect(pkg)
+        }
+
+        // App fora do filtro foi aberto - limpa cache
+        Log.d(TAG, "📤 Different app opened: $pkg (not in filter)")
+        cachedApp.set(null)
+        return null
+    }
+
+    private fun analyzeUsageStats(
+        filterList: List<String>,
+        currentTime: Long
+    ): CommonRpc? {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
+                as? UsageStatsManager ?: return null
+
+        try {
+            val stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_YEARLY,
+                currentTime - 60 * 60 * 1000L,
+                currentTime
             )
 
-            // Track state of ALL apps in filterList
-            val appStates = mutableMapOf<String, MutableList<Pair<Long, Boolean>>>()
+            if (stats.isNullOrEmpty()) {
+                Log.d(TAG, "📈 No UsageStats")
+                return null
+            }
 
-            while (events.hasNextEvent()) {
-                val event = UsageEvents.Event()
-                events.getNextEvent(event)
+            // Ordena por lastTimeUsed
+            val sortedStats = stats
+                .filter { !it.packageName.shouldBeIgnored() }
+                .sortedByDescending { it.lastTimeUsed }
 
-                // Only track apps from filterList
-                if (filterList.contains(event.packageName)) {
-                    when (event.eventType) {
-                        UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                            appStates.getOrPut(event.packageName) { mutableListOf() }
-                                .add(Pair(event.timeStamp, true))
-                        }
-                        UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                            appStates.getOrPut(event.packageName) { mutableListOf() }
-                                .add(Pair(event.timeStamp, false))
-                        }
+            // Encontra o app mais recente (pode ser launcher)
+            val mostRecentApp = sortedStats.firstOrNull()
+            
+            // Encontra o launcher mais recente
+            val mostRecentLauncher = sortedStats.find { it.packageName.isLauncher() }
+            
+            // Encontra o app do filtro mais recente
+            val mostRecentFilteredApp = sortedStats.find { 
+                filterList.isEmpty() || filterList.contains(it.packageName) 
+            }
+
+            // Debug logs
+            Log.d(TAG, "📈 Most recent: ${mostRecentApp?.packageName} (${mostRecentApp?.let { (currentTime - it.lastTimeUsed) / 1000 }}s)")
+            mostRecentLauncher?.let { 
+                Log.d(TAG, "🏠 Launcher: ${it.packageName} (${(currentTime - it.lastTimeUsed) / 1000}s)")
+            }
+            mostRecentFilteredApp?.let {
+                Log.d(TAG, "🎮 Filtered: ${it.packageName} (${(currentTime - it.lastTimeUsed) / 1000}s)")
+            }
+
+            val cached = cachedApp.get()
+
+            // ═══════════════════════════════════════════════════════
+            // CASO 1: Launcher é o app mais recente → usuário na home
+            // ═══════════════════════════════════════════════════════
+            if (mostRecentApp?.packageName?.isLauncher() == true) {
+                val launcherAge = currentTime - mostRecentApp.lastTimeUsed
+                
+                // Se launcher foi usado recentemente (menos de 30s)
+                if (launcherAge < FOREGROUND_THRESHOLD_MS) {
+                    Log.d(TAG, "🏠 User is on HOME (launcher ${launcherAge/1000}s ago)")
+                    cachedApp.set(null)
+                    lastLauncherTime = mostRecentApp.lastTimeUsed
+                    return CommonRpc()
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // CASO 2: Launcher foi usado DEPOIS do app cacheado → app fechado
+            // ═══════════════════════════════════════════════════════
+            if (cached != null && mostRecentLauncher != null) {
+                if (mostRecentLauncher.lastTimeUsed > cached.lastSeenTime) {
+                    Log.d(TAG, "📤 Launcher used after cached app - clearing")
+                    cachedApp.set(null)
+                    lastLauncherTime = mostRecentLauncher.lastTimeUsed
+                    return CommonRpc()
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // CASO 3: Outro app (fora do filtro) é mais recente que o cacheado
+            // ═══════════════════════════════════════════════════════
+            if (cached != null && mostRecentApp != null) {
+                val isInFilter = filterList.isEmpty() || filterList.contains(mostRecentApp.packageName)
+                val isMoreRecent = mostRecentApp.lastTimeUsed > cached.lastSeenTime
+                
+                if (!mostRecentApp.packageName.isLauncher() && 
+                    !isInFilter && 
+                    isMoreRecent) {
+                    Log.d(TAG, "📤 Other app opened: ${mostRecentApp.packageName}")
+                    cachedApp.set(null)
+                    return CommonRpc()
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // CASO 4: App do filtro está em foreground
+            // ═══════════════════════════════════════════════════════
+            if (mostRecentFilteredApp != null) {
+                val appAge = currentTime - mostRecentFilteredApp.lastTimeUsed
+                val pkg = mostRecentFilteredApp.packageName
+                
+                // App usado nos últimos 30 segundos → definitivamente em foreground
+                if (appAge <= FOREGROUND_THRESHOLD_MS) {
+                    Log.d(TAG, "✅ UsageStats: $pkg (${appAge/1000}s ago)")
+                    cachedApp.set(CachedApp(pkg, mostRecentFilteredApp.lastTimeUsed))
+                    return createCommonRpcDirect(pkg)
+                }
+                
+                // App é o mais recente E é o mesmo do cache → provavelmente ainda aberto
+                if (cached != null && 
+                    pkg == cached.packageName &&
+                    mostRecentApp?.packageName == pkg) {
+                    
+                    val cacheAge = currentTime - cached.lastSeenTime
+                    
+                    if (cacheAge < CACHE_EXTENDED_MS) {
+                        Log.d(TAG, "✅ UsageStats (cached): $pkg")
+                        return createCommonRpcDirect(pkg)
+                    }
+                }
+                
+                // Se não há launcher mais recente, pode estar no app ainda
+                if (mostRecentLauncher == null || 
+                    mostRecentFilteredApp.lastTimeUsed > mostRecentLauncher.lastTimeUsed) {
+                    
+                    if (appAge <= CACHE_EXTENDED_MS) {
+                        Log.d(TAG, "✅ UsageStats (no launcher): $pkg (${appAge/1000}s ago)")
+                        cachedApp.set(CachedApp(pkg, mostRecentFilteredApp.lastTimeUsed))
+                        return createCommonRpcDirect(pkg)
                     }
                 }
             }
 
-            // Find most recent app and its current state
-            var mostRecentApp: String? = null
-            var mostRecentTime = 0L
-            var isCurrentlyInForeground = false
-
-            for ((pkg, eventsList) in appStates) {
-                // Get most recent event for this app
-                val lastEvent = eventsList.maxByOrNull { it.first }
-                if (lastEvent != null && lastEvent.first > mostRecentTime) {
-                    mostRecentTime = lastEvent.first
-                    mostRecentApp = pkg
-                    isCurrentlyInForeground = lastEvent.second
-                }
-            }
-
-            // If found an app in FOREGROUND
-            if (mostRecentApp != null && isCurrentlyInForeground) {
-                if (!mostRecentApp.contains("launcher", ignoreCase = true)) {
-                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Found foreground app: $mostRecentApp (${currentTimeMillis - mostRecentTime}ms ago)")
-
-                    cachedApp.set(CachedApp(mostRecentApp, mostRecentTime))
-                    return createCommonRpcDirect(mostRecentApp)
-                }
-            }
-
-            // If last event was BACKGROUND, clear cache
-            val cached = cachedApp.get()
-            if (mostRecentApp != null &&
-                cached != null &&
-                mostRecentApp == cached.packageName &&
-                !isCurrentlyInForeground) {
-
-                android.util.Log.e("GetCurrentlyRunningApp", "✗ App moved to background: $mostRecentApp")
-                cachedApp.set(null)
-                return CommonRpc()
-            }
-
-            // Use cache with 1-second timeout as fallback
-            if (cached != null && filterList.contains(cached.packageName)) {
-                val timeSinceKnown = currentTimeMillis - cached.timestamp
-
-                // Very short timeout: AccessibilityService should update within 1s
-                if (timeSinceKnown < 1000) {
-                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Using cached foreground app: ${cached.packageName} (${timeSinceKnown}ms old)")
+            // ═══════════════════════════════════════════════════════
+            // CASO 5: Cache ainda válido
+            // ═══════════════════════════════════════════════════════
+            if (cached != null) {
+                val cacheAge = currentTime - cached.lastSeenTime
+                val inFilter = filterList.isEmpty() || filterList.contains(cached.packageName)
+                
+                // Verifica se não há evidência de que saiu do app
+                val noLauncherEvidence = mostRecentLauncher == null || 
+                    mostRecentLauncher.lastTimeUsed < cached.lastSeenTime
+                    
+                if (inFilter && noLauncherEvidence && cacheAge < CACHE_EXTENDED_MS) {
+                    Log.d(TAG, "✅ Cache (no contrary evidence): ${cached.packageName}")
                     return createCommonRpcDirect(cached.packageName)
-                } else {
-                    android.util.Log.e("GetCurrentlyRunningApp", "⏰ Cache timeout: ${cached.packageName} (${timeSinceKnown}ms old)")
-                    cachedApp.set(null)
                 }
-            }
-        }
-
-        android.util.Log.e("GetCurrentlyRunningApp", "Using fallback method...")
-
-        // Fallback for cases where no events (app just opened)
-        val fallbackBeginTime = currentTimeMillis - 60000 // 1 minute
-        val queryUsageStats = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_BEST, fallbackBeginTime, currentTimeMillis
-        )
-
-        if (queryUsageStats == null || queryUsageStats.isEmpty()) {
-            android.util.Log.e("GetCurrentlyRunningApp", "No usage stats available")
-            // Clear cache if no data
-            val cached = cachedApp.get()
-            if (cached != null) {
-                android.util.Log.e("GetCurrentlyRunningApp", "✗ Clearing stale cache: ${cached.packageName}")
-                cachedApp.set(null)
-            }
-            return CommonRpc()
-        }
-
-        val treeMap: SortedMap<Long, UsageStats> = TreeMap()
-        for (usageStats in queryUsageStats) {
-            treeMap[usageStats.lastTimeUsed] = usageStats
-        }
-
-        if (treeMap.isEmpty()) {
-            android.util.Log.e("GetCurrentlyRunningApp", "TreeMap is empty")
-            val cached = cachedApp.get()
-            if (cached != null) {
-                android.util.Log.e("GetCurrentlyRunningApp", "✗ Clearing stale cache: ${cached.packageName}")
-                cachedApp.set(null)
-            }
-            return CommonRpc()
-        }
-
-        if (filterList.isNotEmpty()) {
-            val keys = treeMap.keys.toList().reversed()
-            android.util.Log.e("GetCurrentlyRunningApp", "Checking ${keys.size} apps against filter list")
-
-            // Track if cached app is found in recent usage
-            var cachedAppFoundInRecent = false
-            val cached = cachedApp.get()
-
-            for (key in keys) {
-                val usageStats = treeMap[key]!!
-                val pkg = usageStats.packageName
-
-                val timeSinceLastUse = currentTimeMillis - usageStats.lastTimeUsed
-                // Reduce window to 30 seconds
-                if (timeSinceLastUse > 30000 && timeSinceLastUse >= 0) {
-                    continue
-                }
-
-                if (pkg.contains("launcher", ignoreCase = true) ||
-                    pkg == "com.my.kizzy" ||
-                    pkg == "android") {
-                    continue
-                }
-
-                // Mark if we found the cached app
-                if (cached != null && pkg == cached.packageName) {
-                    cachedAppFoundInRecent = true
-                }
-
-                if (filterList.contains(pkg)) {
-                    android.util.Log.e("GetCurrentlyRunningApp", "✓ Found valid app (fallback): $pkg (${timeSinceLastUse}ms ago)")
-                    cachedApp.set(CachedApp(pkg, key))
-                    return createCommonRpcDirect(pkg)
-                }
-            }
-
-            // If cached app NOT found in recent UsageStats, clear it
-            if (cached != null && !cachedAppFoundInRecent) {
-                android.util.Log.e("GetCurrentlyRunningApp", "✗ Cached app not in recent usage: ${cached.packageName}")
+                
+                Log.d(TAG, "📤 Cache invalidated (age: ${cacheAge/1000}s, launcher evidence: ${!noLauncherEvidence})")
                 cachedApp.set(null)
             }
 
-            android.util.Log.e("GetCurrentlyRunningApp", "✗ No enabled app found")
-            return CommonRpc()
-        } else {
-            val lastKey = treeMap.lastKey()
-            val lastPackageName = treeMap[lastKey]!!.packageName
-            android.util.Log.e("GetCurrentlyRunningApp", "Returning most recent app: $lastPackageName")
-            return createCommonRpcDirect(lastPackageName)
+            Log.d(TAG, "❌ No valid app state")
+            return null
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in analyzeUsageStats", e)
+            return null
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Helpers
+    // ═══════════════════════════════════════════════════════════════
+
+    private fun String.shouldBeIgnored(): Boolean {
+        if (this in IGNORED_PACKAGES) return true
+        return IGNORED_PATTERNS.any { contains(it, ignoreCase = true) }
+    }
+
+    private fun String.isLauncher(): Boolean {
+        return LAUNCHER_PATTERNS.any { pattern ->
+            this.contains(pattern, ignoreCase = true)
         }
     }
 

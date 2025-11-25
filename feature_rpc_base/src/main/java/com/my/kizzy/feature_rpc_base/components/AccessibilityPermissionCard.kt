@@ -12,6 +12,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.my.kizzy.feature_rpc_base.AccessibilityHelper
 import com.my.kizzy.feature_rpc_base.services.ForegroundAppDetector
+import androidx.compose.ui.res.stringResource
+import com.my.kizzy.resources.R
 
 @Composable
 fun AccessibilityPermissionCard(context: Context = LocalContext.current) {
@@ -40,12 +42,12 @@ fun AccessibilityPermissionCard(context: Context = LocalContext.current) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "⚠️ Detecção Melhorada Disponível",
+                    text = stringResource(R.string.accessibility_enhanced_detection_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
-                    text = "Ative o serviço de acessibilidade para detecção instantânea de apps.",
+                    text = stringResource(R.string.accessibility_enhanced_detection_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
@@ -55,7 +57,7 @@ fun AccessibilityPermissionCard(context: Context = LocalContext.current) {
                 ) {
                     Icon(Icons.Default.Settings, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Abrir Configurações")
+                    Text(stringResource(R.string.open_settings))
                 }
             }
         }

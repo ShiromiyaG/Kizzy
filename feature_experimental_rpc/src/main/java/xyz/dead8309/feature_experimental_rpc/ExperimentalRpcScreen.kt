@@ -157,9 +157,6 @@ fun ExperimentalRpcScreen(
             }
             LazyColumn {
                 item {
-                    AccessibilityPermissionCard()
-                }
-                item {
                     Subtitle(text = stringResource(R.string.general_settings))
                 }
                 item {
@@ -313,6 +310,9 @@ fun ExperimentalRpcScreen(
                             fontWeight = FontWeight.Light,
                         )
                     }
+                }
+                item {
+                    AccessibilityPermissionCard()
                 }
             }
         }

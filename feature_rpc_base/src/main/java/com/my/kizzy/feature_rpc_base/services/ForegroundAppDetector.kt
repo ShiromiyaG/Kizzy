@@ -12,6 +12,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 
 import com.my.kizzy.data.get_current_data.app.ForegroundAppStateHolder
+import com.my.kizzy.data.get_current_data.app.ForegroundDetectorManager
 
 class ForegroundAppDetector : AccessibilityService() {
 
@@ -20,19 +21,26 @@ class ForegroundAppDetector : AccessibilityService() {
         private const val DEBOUNCE_MS = 100L
     }
 
-    // EntryPoint para acessar dependências Hilt
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface ForegroundAppDetectorEntryPoint {
         fun stateHolder(): ForegroundAppStateHolder
+        fun detectorManager(): ForegroundDetectorManager
     }
 
-    // Lazy initialization - só acessa após service estar conectado
-    private val stateHolder: ForegroundAppStateHolder by lazy {
+    private val entryPoint: ForegroundAppDetectorEntryPoint by lazy {
         EntryPointAccessors.fromApplication(
             applicationContext,
             ForegroundAppDetectorEntryPoint::class.java
-        ).stateHolder()
+        )
+    }
+
+    private val stateHolder: ForegroundAppStateHolder by lazy { 
+        entryPoint.stateHolder() 
+    }
+    
+    private val detectorManager: ForegroundDetectorManager by lazy { 
+        entryPoint.detectorManager() 
     }
     
     private val handler = Handler(Looper.getMainLooper())
@@ -41,8 +49,9 @@ class ForegroundAppDetector : AccessibilityService() {
     
     private val emitRunnable = Runnable {
         pendingPackage?.let { pkg ->
-            if (pkg != stateHolder.get()) {
-                log("📱 App changed: ${stateHolder.get()} -> $pkg")
+            val current = stateHolder.get()
+            if (pkg != current) {
+                log("📱 App changed: $current -> $pkg")
                 stateHolder.update(pkg)
             }
         }
@@ -57,6 +66,10 @@ class ForegroundAppDetector : AccessibilityService() {
             flags = AccessibilityServiceInfo.DEFAULT
             notificationTimeout = 50L
         }
+        
+        detectorManager.refreshAvailability()
+        detectorManager.setRunning(true)
+        stopUsageStatsPolling()
         
         log("🟢 Service connected")
     }
@@ -99,8 +112,19 @@ class ForegroundAppDetector : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        detectorManager.setRunning(false)
+        detectorManager.refreshAvailability()
         log("🔴 Service destroyed")
         super.onDestroy()
+    }
+    
+    private fun stopUsageStatsPolling() {
+        try {
+            UsageStatsPollingService.stop(this)
+            log("🛑 Stopped UsageStats polling")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping polling", e)
+        }
     }
     
     private fun log(message: String) {

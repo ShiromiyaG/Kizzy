@@ -212,43 +212,67 @@ class ExperimentalRpc : Service() {
     private fun startAppDetectionCoroutine() {
         appDetectionJob?.cancel()
         appDetectionJob = scope.launch {
-            log("App detection coroutine started (Reactive Mode)")
+            log("App detection coroutine started (Polling Mode)")
             
-            foregroundAppStateHolder.currentPackage.collectLatest { pkgName ->
-                if (!useAppsRpc) return@collectLatest
+            while (isActive) {
+                if (!useAppsRpc) {
+                    delay(5000)
+                    continue
+                }
                 
-                if (pkgName == null) {
-                    log("App flow emitted null")
-                    latestAppData = null
-                    decideAndPushRpc()
-                    return@collectLatest
+                // If no apps are enabled, don't detect anything
+                if (enabledExperimentalApps.isEmpty()) {
+                    if (latestAppData != null) {
+                        log("No enabled apps, clearing data")
+                        latestAppData = null
+                        decideAndPushRpc()
+                    }
+                    delay(5000)
+                    continue
                 }
 
-                // Ignore system apps/keyboard if needed
-                val isIgnored = pkgName in IGNORED_PACKAGES ||
-                    IGNORED_PACKAGE_KEYWORDS.any { pkgName.contains(it, ignoreCase = true) }
-
-                if (isIgnored) return@collectLatest
-                
-                // Logic to check if enabled
                 val mediaPackages = if (currentMediaController != null) {
                     listOf(currentMediaController!!.packageName)
                 } else emptyList()
                 
                 val appsToCheck = enabledExperimentalApps.filter { !mediaPackages.contains(it) }
                 
-                // Direct check instead of calling expensive getCurrentlyRunningApp with UsageStats fallback
-                if (appsToCheck.contains(pkgName)) {
-                    val appData = getCurrentlyRunningApp.createCommonRpcDirect(pkgName)
-                    latestAppData = appData.copy(time = Timestamps(start = System.currentTimeMillis()))
-                    log("Detected app (Reactive): ${appData.name} ($pkgName)")
-                    decideAndPushRpc()
-                } else {
-                    // App changed to something not enabled
-                    log("App changed to non-enabled: $pkgName")
-                    latestAppData = null
-                    decideAndPushRpc()
+                // If all enabled apps are currently media apps, stop app RPC
+                if (appsToCheck.isEmpty()) {
+                    if (latestAppData != null) {
+                        latestAppData = null
+                        decideAndPushRpc()
+                    }
+                    delay(5000)
+                    continue
                 }
+
+                // Call getCurrentlyRunningApp with the filter
+                // This handles both Accessibility (via ForegroundAppStateHolder internally) and UsageStats fallback
+                val detectedRpc = getCurrentlyRunningApp(filterList = appsToCheck)
+                
+                if (detectedRpc.packageName.isNotEmpty()) {
+                    // Only update if package changed to avoid resetting timestamps unnecessarily
+                    // OR if we want to keep the timestamp fresh? 
+                    // Usually we want to keep the timestamp of when it *started*.
+                    // GetCurrentlyRunningApp returns a new CommonRpc object.
+                    
+                    val currentPkg = latestAppData?.packageName
+                    if (currentPkg != detectedRpc.packageName) {
+                        log("Detected app change: ${detectedRpc.name} (${detectedRpc.packageName})")
+                        latestAppData = detectedRpc.copy(time = Timestamps(start = System.currentTimeMillis()))
+                        decideAndPushRpc()
+                    }
+                    // If same app, do nothing (keep existing state/timestamp)
+                } else {
+                    if (latestAppData != null) {
+                        log("No app detected from enabled list, clearing")
+                        latestAppData = null
+                        decideAndPushRpc()
+                    }
+                }
+                
+                delay(1000)
             }
         }
     }
