@@ -53,6 +53,15 @@ import javax.inject.Inject
 
 private const val TAG = "ExperimentalRPC"
 
+private val IGNORED_PACKAGES = setOf(
+    "com.android.systemui"
+)
+
+private val IGNORED_PACKAGE_KEYWORDS = listOf(
+    "inputmethod",
+    "keyboard"
+)
+
 @Suppress("DEPRECATION")
 @AndroidEntryPoint
 class ExperimentalRpc : Service() {
@@ -96,6 +105,7 @@ class ExperimentalRpc : Service() {
     private var latestMediaData: RichMediaMetadata? = null
     private var latestRawMediaMetadata: MediaMetadata? = null
     private var latestAppData: CommonRpc? = null
+    private var cachedRpcButtons: RpcButtons? = null
     
     private var appDetectionJob: Job? = null
 
@@ -183,8 +193,15 @@ class ExperimentalRpc : Service() {
         appActivityTypes = Prefs.getAppActivityTypes()
         enabledExperimentalApps = try {
             Json.decodeFromString(Prefs[Prefs.ENABLED_EXPERIMENTAL_APPS, "[]"])
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log("Failed to decode enabled apps: ${e.message}")
             emptyList()
+        }
+        cachedRpcButtons = try {
+            Json.decodeFromString(Prefs[Prefs.RPC_BUTTONS_DATA, "{}"])
+        } catch (e: Exception) {
+            log("Failed to decode RPC buttons: ${e.message}")
+            RpcButtons()
         }
         log("Settings loaded: Apps=$useAppsRpc, Media=$useMediaRpc, EnabledApps=${enabledExperimentalApps.size}")
     }
@@ -204,10 +221,9 @@ class ExperimentalRpc : Service() {
                     return@collectLatest
                 }
 
-                // Ignore system apps/keyboard if needed (though AccessibilityService likely filters some already, adding safety)
-                val isIgnored = pkgName.contains("inputmethod", ignoreCase = true) ||
-                               pkgName.contains("keyboard", ignoreCase = true) ||
-                               pkgName == "com.android.systemui"
+                // Ignore system apps/keyboard if needed
+                val isIgnored = pkgName in IGNORED_PACKAGES ||
+                    IGNORED_PACKAGE_KEYWORDS.any { pkgName.contains(it, ignoreCase = true) }
 
                 if (isIgnored) return@collectLatest
 
@@ -369,8 +385,7 @@ class ExperimentalRpc : Service() {
         rawMediaMetadata: MediaMetadata? = null,
     ) {
         log("updatePresence called: appInfo=${appInfo?.name}, richMediaInfo=${richMediaInfo?.appName}")
-        val rpcButtonsString = Prefs[Prefs.RPC_BUTTONS_DATA, "{}"]
-        val rpcButtons = Json.decodeFromString<RpcButtons>(rpcButtonsString)
+        val rpcButtons = cachedRpcButtons ?: RpcButtons()
 
         var finalName: String?
         var finalDetails: String?
@@ -504,8 +519,7 @@ class ExperimentalRpc : Service() {
                 }
                 log("updatePresence: RPC build() called")
             } catch (e: Exception) {
-                log("updatePresence: ERROR building RPC: ${e.message}")
-                e.printStackTrace()
+                log("updatePresence: ERROR building RPC: ${e.message}", isError = true)
             }
         }
 
@@ -532,19 +546,30 @@ class ExperimentalRpc : Service() {
         )
     }
 
-    private fun log(message: String) {
-        android.util.Log.e(TAG, message)
-        logger.i(TAG, message)
+    private fun log(message: String, isError: Boolean = false) {
+        if (isError) {
+            android.util.Log.e(TAG, message)
+            logger.e(TAG, message)
+        } else {
+            android.util.Log.d(TAG, message)
+            logger.i(TAG, message)
+        }
     }
 
     override fun onDestroy() {
         mediaSessionManager.removeOnActiveSessionsChangedListener(::activeSessionsListener)
         currentMediaController?.unregisterCallback(mediaControllerCallback)
         appDetectionJob?.cancel()
-        runBlocking {
-            kizzyRPC.closeRPC()
+        // Launch closeRPC in scope before canceling to avoid blocking main thread
+        scope.launch {
+            try {
+                kizzyRPC.closeRPC()
+            } catch (e: Exception) {
+                log("Error closing RPC: ${e.message}", isError = true)
+            }
+        }.invokeOnCompletion {
+            scope.cancel()
         }
-        scope.cancel()
         GetCurrentlyRunningApp.accessibilityServicePackage = null
         super.onDestroy()
     }

@@ -179,14 +179,11 @@ class KizzyRPC(
      * 3: Watching
      * 5: Competing
      *
-     * @param type
+     * @param type Activity type (0-5, defaults to 0 if invalid)
      * @return
      */
-
     fun setType(type: Int): KizzyRPC {
-        if (type in 0..5)
-            this.type = type
-        else this.type = 0
+        this.type = type.coerceIn(0, 5)
         return this
     }
 

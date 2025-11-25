@@ -108,11 +108,15 @@ fun Home(
             canScroll = { true })
     val isCollapsed = scrollBehavior.state.collapsedFraction > 0.55f
     
+    // Check for updates on first launch with proper state tracking
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(1000)
         isCheckingUpdate = true
-        checkForUpdates()
-        isCheckingUpdate = false
+        try {
+            checkForUpdates()
+        } finally {
+            isCheckingUpdate = false
+        }
     }
     
     if (showUpdateDialog && state is HomeScreenState.LoadingCompleted) {

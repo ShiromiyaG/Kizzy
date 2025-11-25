@@ -49,49 +49,43 @@ class GetCurrentPlayingMediaAll @Inject constructor(
         val mediaSessionManager =
             context.getSystemService(Service.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val sessions = mediaSessionManager.getActiveSessions(componentName)
+        
         for (mediaController in sessions) {
+            // Skip if specific package requested and doesn't match
             if (packageName != null && mediaController.packageName != packageName) continue
             // Skip if enabledApps list is provided and package is not in it
-            if (enabledApps.isNotEmpty() && !enabledApps.contains(mediaController.packageName)) continue
+            if (enabledApps.isNotEmpty() && mediaController.packageName !in enabledApps) continue
             
-            val metadata = mediaController.metadata
+            val metadata = mediaController.metadata ?: continue
             val playbackState = mediaController.playbackState?.state
             
-            // Skip if no metadata at all
-            if (metadata == null) continue
-            
             val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
-            
-            // Skip if no title AND no artist (completely empty metadata)
             val author = metadataResolver.getArtistOrAuthor(metadata)
+            
+            // Skip if no meaningful metadata
             if (title.isNullOrBlank() && author.isNullOrBlank()) continue
             
             val appName = AppUtils.getAppName(mediaController.packageName)
-            val album = metadata.let { metadataResolver.getAlbum(it) }
-            val bitmap = metadata?.let { metadataResolver.getCoverArt(it) }
-            val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)
+            val album = metadataResolver.getAlbum(metadata)
+            val bitmap = metadataResolver.getCoverArt(metadata)
+            val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
             val position = mediaController.playbackState?.position
 
-            var timestamps: Timestamps? = null
-            duration?.let {
-                if (it != 0L && playbackState == PlaybackState.STATE_PLAYING) timestamps = Timestamps(
+            val timestamps = if (duration != 0L && playbackState == PlaybackState.STATE_PLAYING) {
+                Timestamps(
                     end = System.currentTimeMillis() + duration - (position ?: 0L),
                     start = System.currentTimeMillis() - (position ?: 0L)
                 )
-            }
+            } else null
 
-            // At this point we already checked title is not null/blank above
-            val appIcon = RpcImage.ApplicationIcon(
-                mediaController.packageName, context
-            )
+            val appIcon = RpcImage.ApplicationIcon(mediaController.packageName, context)
 
-            var coverArt: RpcImage? = null
-            if (bitmap != null) {
-                coverArt = RpcImage.BitmapImage(
+            val coverArt = bitmap?.let {
+                RpcImage.BitmapImage(
                     context = context,
-                    bitmap = bitmap,
+                    bitmap = it,
                     packageName = mediaController.packageName,
-                    title = "${metadata.let { metadataResolver.getAlbumArtists(it) }}|${metadata.let { metadataResolver.getAlbum(it) } ?: title}"
+                    title = "${metadataResolver.getAlbumArtists(metadata)}|${album ?: title}"
                 )
             }
 

@@ -39,19 +39,16 @@ sealed class RpcImage {
     }
 
     class ApplicationIcon(val packageName: String, private val context: Context) : RpcImage() {
-        val data = Prefs[Prefs.SAVED_IMAGES, "{}"]
-        private val savedImages: HashMap<String, String> = Json.decodeFromString(data)
-
         override suspend fun resolveImage(repository: KizzyRepository): String? {
-            return if (savedImages.containsKey(packageName))
-                savedImages[packageName]
-            else
-                retrieveImageFromApi(packageName, context, repository)
+            // Read fresh data each time to avoid stale cache issues
+            val data = Prefs[Prefs.SAVED_IMAGES, "{}"]
+            val savedImages: MutableMap<String, String> = Json.decodeFromString(data)
+            
+            return savedImages[packageName] ?: retrieveImageFromApi(savedImages, repository)
         }
 
         private suspend fun retrieveImageFromApi(
-            packageName: String,
-            context: Context,
+            savedImages: MutableMap<String, String>,
             repository: KizzyRepository,
         ): String? {
             val applicationInfo = context.getAppInfo(packageName)
