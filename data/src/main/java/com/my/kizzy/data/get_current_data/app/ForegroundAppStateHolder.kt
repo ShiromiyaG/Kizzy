@@ -6,17 +6,56 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Holds the current foreground app state with timestamp tracking.
+ * Used by both AccessibilityService and UsageStats detection methods.
+ */
 @Singleton
 class ForegroundAppStateHolder @Inject constructor() {
     
-    private val _currentApp = MutableStateFlow<String?>(null)
-    val currentApp: StateFlow<String?> = _currentApp.asStateFlow()
+    data class AppState(
+        val packageName: String,
+        val detectedAt: Long = System.currentTimeMillis()
+    )
     
-    fun get(): String? = _currentApp.value
+    private val _currentApp = MutableStateFlow<AppState?>(null)
+    val currentApp: StateFlow<AppState?> = _currentApp.asStateFlow()
     
+    /**
+     * Returns the current package name, or null if no app is detected
+     */
+    fun get(): String? = _currentApp.value?.packageName
+    
+    /**
+     * Returns the full AppState with timestamp, or null if no app is detected
+     */
+    fun getState(): AppState? = _currentApp.value
+    
+    /**
+     * Returns how long the current app has been in foreground (in milliseconds)
+     */
+    fun getElapsedTime(): Long {
+        val state = _currentApp.value ?: return 0L
+        return System.currentTimeMillis() - state.detectedAt
+    }
+    
+    /**
+     * Returns the timestamp when the current app was first detected
+     */
+    fun getStartTimestamp(): Long? = _currentApp.value?.detectedAt
+    
+    /**
+     * Updates the current app. Only updates timestamp if package actually changed.
+     */
     fun update(packageName: String?) {
-        if (packageName != _currentApp.value) {
-            _currentApp.value = packageName
+        if (packageName == null) {
+            _currentApp.value = null
+            return
+        }
+        
+        val current = _currentApp.value
+        if (current?.packageName != packageName) {
+            _currentApp.value = AppState(packageName, System.currentTimeMillis())
         }
     }
     

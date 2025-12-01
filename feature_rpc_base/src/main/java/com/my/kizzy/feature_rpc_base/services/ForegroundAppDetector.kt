@@ -86,7 +86,18 @@ class ForegroundAppDetector : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         
         val pkg = event.packageName?.toString() ?: return
+        
+        // Ignora pacotes do sistema
         if (pkg.shouldBeIgnored()) return
+        
+        // Launcher detectado - limpa o estado (usuário na home)
+        if (pkg.isLauncher()) {
+            log("🏠 Launcher detected: $pkg")
+            stateHolder.clear()
+            pendingPackage = null
+            handler.removeCallbacks(emitRunnable)
+            return
+        }
         
         val now = System.currentTimeMillis()
         pendingPackage = pkg
@@ -104,6 +115,10 @@ class ForegroundAppDetector : AccessibilityService() {
     private fun String.shouldBeIgnored(): Boolean {
         return this in IGNORED_PACKAGES || 
                IGNORED_PATTERNS.any { contains(it, ignoreCase = true) }
+    }
+    
+    private fun String.isLauncher(): Boolean {
+        return LAUNCHER_PATTERNS.any { contains(it, ignoreCase = true) }
     }
 
     override fun onInterrupt() {
@@ -133,14 +148,45 @@ class ForegroundAppDetector : AccessibilityService() {
 }
 
 // Constantes fora da classe para evitar recriação
+// Sincronizado com UsageStatsForegroundDetector
 private val IGNORED_PACKAGES = setOf(
     "com.android.systemui",
     "android",
+    "com.google.android.permissioncontroller",
+    "com.android.packageinstaller",
+    "com.google.android.packageinstaller",
+    "com.samsung.android.permissioncontroller",
 )
 
 private val IGNORED_PATTERNS = listOf(
     "inputmethod",
     "keyboard", 
-    "launcher",
     ".ime.",
+    "wallpaper",
+    "lockscreen",
+    "screenshot",
+    "systemui",
+    "permissioncontroller"
+)
+
+// Launchers são tratados separadamente - não ignorados, mas resetam o estado
+private val LAUNCHER_PATTERNS = listOf(
+    "launcher",
+    "com.miui.home",
+    "trebuchet",
+    "lawnchair",
+    "nova",
+    "oneplus.launcher",
+    "sec.android.app.launcher",
+    "huawei.android.launcher",
+    "oppo.launcher",
+    "vivo.launcher",
+    "realme.launcher",
+    "com.google.android.apps.nexuslauncher",
+    "com.microsoft.launcher",
+    "com.teslacoilsw.launcher",
+    "com.actionlauncher.playstore",
+    "com.niagara.launcher",
+    "ginlemon.flowerfree",
+    "com.ss.launcher2"
 )

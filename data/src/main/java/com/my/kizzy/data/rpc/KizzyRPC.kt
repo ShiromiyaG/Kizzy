@@ -49,6 +49,17 @@ class KizzyRPC(
     private var buttons = ArrayList<String>()
     private var buttonUrl = ArrayList<String>()
     private var url: String? = null
+    
+    // Rate limiting para evitar spam ao Discord
+    private var lastUpdateTime = 0L
+    private var lastSentRpc: CommonRpc? = null
+    
+    companion object {
+        // Rate limit mais flexível - mudanças significativas sempre passam
+        private const val MIN_UPDATE_INTERVAL_MS = 5_000L
+        // Intervalo mínimo entre updates idênticos (evita reenvio desnecessário)
+        private const val DUPLICATE_CHECK_WINDOW_MS = 3_000L
+    }
 
     suspend fun closeRPC() {
         discordWebSocket.close()
@@ -308,11 +319,34 @@ class KizzyRPC(
 
     suspend fun updateRPC(commonRpc: CommonRpc, enableTimestamps: Boolean? = true) {
         if (!discordWebSocket.isActive) return
+        
+        val currentTime = System.currentTimeMillis()
+        
+        // Rate limiting: verifica se passou tempo suficiente desde o último update
+        val timeSinceLastUpdate = currentTime - lastUpdateTime
+        
+        // Se o RPC é idêntico ao anterior e está dentro da janela de duplicados, ignora
+        if (lastSentRpc != null && 
+            isSameRpc(lastSentRpc!!, commonRpc) && 
+            timeSinceLastUpdate < DUPLICATE_CHECK_WINDOW_MS) {
+            logger.d("KizzyRPC", "Skipping duplicate RPC update")
+            return
+        }
+        
+        // Se não passou o intervalo mínimo E não é uma mudança significativa, ignora
+        if (timeSinceLastUpdate < MIN_UPDATE_INTERVAL_MS && 
+            lastSentRpc != null &&
+            !isSignificantChange(lastSentRpc!!, commonRpc)) {
+            logger.d("KizzyRPC", "Rate limiting: ${MIN_UPDATE_INTERVAL_MS - timeSinceLastUpdate}ms until next update")
+            return
+        }
+        
         var time = Timestamps(start = startTimestamps)
         if (commonRpc.time != null)
             Timestamps(end = commonRpc.time.end, start = commonRpc.time.start).also { time = it }
         if (commonRpc.partyCurrentSize != null && commonRpc.partyMaxSize != null)
             Party(id = "kizzy", size = arrayOf(commonRpc.partyCurrentSize, commonRpc.partyMaxSize)).also { party = it }
+        
         discordWebSocket.sendActivity(
             Presence(
                 activities = listOf(
@@ -341,5 +375,33 @@ class KizzyRPC(
                 status = this.status
             )
         )
+        
+        // Atualiza estado do rate limiter
+        lastUpdateTime = currentTime
+        lastSentRpc = commonRpc
+    }
+    
+    /**
+     * Verifica se dois RPCs são essencialmente iguais
+     */
+    private fun isSameRpc(old: CommonRpc, new: CommonRpc): Boolean {
+        return old.name == new.name &&
+               old.details == new.details &&
+               old.state == new.state &&
+               old.packageName == new.packageName
+    }
+    
+    /**
+     * Verifica se a mudança é significativa o suficiente para ignorar rate limit
+     * Mudanças de app ou música são sempre significativas
+     */
+    private fun isSignificantChange(old: CommonRpc, new: CommonRpc): Boolean {
+        // App diferente = mudança significativa
+        if (old.packageName != new.packageName) return true
+        // Nome/Título diferente = mudança significativa  
+        if (old.name != new.name) return true
+        // Details diferentes (título da música mudou) = significativo
+        if (old.details != new.details) return true
+        return false
     }
 }

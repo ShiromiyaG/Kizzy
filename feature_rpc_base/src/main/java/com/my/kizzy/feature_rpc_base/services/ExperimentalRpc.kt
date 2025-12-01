@@ -113,6 +113,11 @@ class ExperimentalRpc : Service() {
     private var cachedRpcButtons: RpcButtons? = null
     
     private var appDetectionJob: Job? = null
+    
+    companion object {
+        // Intervalo de polling do app
+        private const val APP_POLL_INTERVAL_MS = 1000L
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -211,8 +216,9 @@ class ExperimentalRpc : Service() {
 
     private fun startAppDetectionCoroutine() {
         appDetectionJob?.cancel()
+        
         appDetectionJob = scope.launch {
-            log("App detection coroutine started (Polling Mode)")
+            log("App detection coroutine started")
             
             while (isActive) {
                 if (!useAppsRpc) {
@@ -248,31 +254,26 @@ class ExperimentalRpc : Service() {
                 }
 
                 // Call getCurrentlyRunningApp with the filter
-                // This handles both Accessibility (via ForegroundAppStateHolder internally) and UsageStats fallback
                 val detectedRpc = getCurrentlyRunningApp(filterList = appsToCheck)
                 
                 if (detectedRpc.packageName.isNotEmpty()) {
-                    // Only update if package changed to avoid resetting timestamps unnecessarily
-                    // OR if we want to keep the timestamp fresh? 
-                    // Usually we want to keep the timestamp of when it *started*.
-                    // GetCurrentlyRunningApp returns a new CommonRpc object.
-                    
+                    // App detectado
                     val currentPkg = latestAppData?.packageName
                     if (currentPkg != detectedRpc.packageName) {
                         log("Detected app change: ${detectedRpc.name} (${detectedRpc.packageName})")
                         latestAppData = detectedRpc.copy(time = Timestamps(start = System.currentTimeMillis()))
                         decideAndPushRpc()
                     }
-                    // If same app, do nothing (keep existing state/timestamp)
                 } else {
+                    // Nenhum app detectado - limpa IMEDIATAMENTE
                     if (latestAppData != null) {
-                        log("No app detected from enabled list, clearing")
+                        log("No app detected, clearing immediately")
                         latestAppData = null
                         decideAndPushRpc()
                     }
                 }
                 
-                delay(1000)
+                delay(APP_POLL_INTERVAL_MS)
             }
         }
     }

@@ -19,6 +19,10 @@ class UsageStatsForegroundDetector @Inject constructor(
         context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
     }
 
+    // Cache para evitar queries repetidas
+    private var lastQueryTime = 0L
+    private var cachedPackage: String? = null
+
     override fun isAvailable(): Boolean {
         return try {
             val endTime = System.currentTimeMillis()
@@ -36,7 +40,17 @@ class UsageStatsForegroundDetector @Inject constructor(
 
     override fun getCurrentApp(): String? {
         return try {
-            queryForegroundApp()
+            val currentTime = System.currentTimeMillis()
+            
+            // Retorna cache se ainda válido
+            if (currentTime - lastQueryTime < CACHE_VALIDITY_MS && cachedPackage != null) {
+                return cachedPackage
+            }
+            
+            val result = queryForegroundApp()
+            cachedPackage = result
+            lastQueryTime = currentTime
+            result
         } catch (e: SecurityException) {
             null
         }
@@ -44,7 +58,7 @@ class UsageStatsForegroundDetector @Inject constructor(
 
     private fun queryForegroundApp(): String? {
         val endTime = System.currentTimeMillis()
-        val startTime = endTime - 2000
+        val startTime = endTime - QUERY_WINDOW_MS
         
         val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
         val event = UsageEvents.Event()
@@ -65,6 +79,14 @@ class UsageStatsForegroundDetector @Inject constructor(
         }
         
         return lastForegroundPackage
+    }
+
+    /**
+     * Limpa o cache forçando uma nova query na próxima chamada
+     */
+    fun invalidateCache() {
+        cachedPackage = null
+        lastQueryTime = 0L
     }
     
     private fun UsageEvents.Event.isForegroundEvent(): Boolean {
@@ -88,12 +110,27 @@ class UsageStatsForegroundDetector @Inject constructor(
     }
 
     companion object {
+        private const val CACHE_VALIDITY_MS = 300L
+        private const val QUERY_WINDOW_MS = 5000L
+        
         private val IGNORED_PACKAGES = setOf(
             "com.android.systemui",
             "android",
+            "com.google.android.permissioncontroller",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.samsung.android.permissioncontroller",
         )
         private val IGNORED_PATTERNS = listOf(
-            "inputmethod", "keyboard", "launcher", ".ime."
+            "inputmethod", 
+            "keyboard", 
+            "launcher", 
+            ".ime.",
+            "wallpaper",
+            "lockscreen",
+            "screenshot",
+            "systemui",
+            "permissioncontroller"
         )
     }
 }

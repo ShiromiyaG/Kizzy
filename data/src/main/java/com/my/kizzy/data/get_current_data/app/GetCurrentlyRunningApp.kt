@@ -22,20 +22,32 @@ class GetCurrentlyRunningApp @Inject constructor(
         private const val TAG = "GetCurrentlyRunningApp"
         
         // Tempo máximo que consideramos um app como "ainda em foreground"
-        private const val FOREGROUND_THRESHOLD_MS = 30_000L  // 30 segundos
+        private const val FOREGROUND_THRESHOLD_MS = 5_000L  // 5 segundos
         
         // Tempo para considerar cache válido quando app está "estável"
-        private const val CACHE_EXTENDED_MS = 120_000L  // 2 minutos
+        private const val CACHE_EXTENDED_MS = 10_000L  // 10 segundos
 
+        // Sincronizado com UsageStatsForegroundDetector e ForegroundAppDetector
         private val IGNORED_PACKAGES = setOf(
             "com.android.systemui",
             "android",
             "com.my.kizzy",
-            "com.my.kizzy.debug"
+            "com.my.kizzy.debug",
+            "com.google.android.permissioncontroller",
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.samsung.android.permissioncontroller",
         )
 
         private val IGNORED_PATTERNS = listOf(
-            "inputmethod", "keyboard", ".ime."
+            "inputmethod", 
+            "keyboard", 
+            ".ime.",
+            "wallpaper",
+            "lockscreen",
+            "screenshot",
+            "systemui",
+            "permissioncontroller"
         )
 
         private val LAUNCHER_PATTERNS = listOf(
@@ -49,7 +61,19 @@ class GetCurrentlyRunningApp @Inject constructor(
             "huawei.android.launcher",
             "oppo.launcher",
             "vivo.launcher",
-            "realme.launcher"
+            "realme.launcher",
+            "com.google.android.apps.nexuslauncher",
+            "com.microsoft.launcher",
+            "com.teslacoilsw.launcher",
+            "com.actionlauncher.playstore",
+            "com.niagara.launcher",
+            "ginlemon.flowerfree",
+            "com.ss.launcher2",
+            "com.transsion.hilauncher",
+            "com.asus.launcher",
+            "com.motorola.launcher3",
+            "com.nothing.launcher",
+            "com.poco.launcher"
         )
     }
 
@@ -128,7 +152,7 @@ class GetCurrentlyRunningApp @Inject constructor(
         currentTime: Long
     ): CommonRpc? {
         if (pkg.isLauncher()) {
-            Log.d(TAG, "🏠 Launcher via Accessibility")
+            Log.d(TAG, "🏠 Launcher via Accessibility - clearing immediately")
             cachedApp.set(null)
             lastLauncherTime = currentTime
             return CommonRpc()

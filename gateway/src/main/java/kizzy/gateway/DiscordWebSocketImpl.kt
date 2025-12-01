@@ -44,6 +44,12 @@ open class DiscordWebSocketImpl(
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+    
+    // Exponential backoff para reconexão
+    private var reconnectAttempts = 0
+    private val baseReconnectDelay = 1000L // 1 segundo
+    private val maxReconnectDelay = 60000L // 60 segundos
+    private val maxReconnectAttempts = 10
 
     override val coroutineContext: CoroutineContext
         get() = SupervisorJob() + Dispatchers.Default
@@ -78,14 +84,45 @@ open class DiscordWebSocketImpl(
         heartbeatJob?.cancel()
         _connected.value = false
         val close = websocket?.closeReason?.await()
-        logger.w("Gateway","Closed with code: ${close?.code}, " +
+        val closeCode = close?.code?.toInt() ?: 0
+        
+        logger.w("Gateway","Closed with code: $closeCode, " +
                 "reason: ${close?.message}, " +
-                "can_reconnect: ${close?.code?.toInt() == 4000}")
-        if (close?.code?.toInt() == 4000) {
-            delay(200.milliseconds)
+                "reconnect_attempt: $reconnectAttempts")
+        
+        // Códigos que permitem reconexão
+        val canReconnect = closeCode in listOf(4000, 4001, 4002, 4003, 4005, 4007, 4008, 4009)
+        
+        if (canReconnect && reconnectAttempts < maxReconnectAttempts) {
+            val delayMs = calculateBackoffDelay()
+            logger.i("Gateway", "Reconnecting in ${delayMs}ms (attempt ${reconnectAttempts + 1}/$maxReconnectAttempts)")
+            delay(delayMs.milliseconds)
+            reconnectAttempts++
             connect()
-        } else
+        } else {
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                logger.e("Gateway", "Max reconnect attempts reached, giving up")
+            }
             close()
+        }
+    }
+    
+    /**
+     * Calcula o delay com exponential backoff + jitter
+     */
+    private fun calculateBackoffDelay(): Long {
+        val exponentialDelay = baseReconnectDelay * (1 shl minOf(reconnectAttempts, 6))
+        val cappedDelay = minOf(exponentialDelay, maxReconnectDelay)
+        // Adiciona jitter de 0-25% para evitar thundering herd
+        val jitter = (cappedDelay * 0.25 * Math.random()).toLong()
+        return cappedDelay + jitter
+    }
+    
+    /**
+     * Reseta o contador de reconexão após conexão bem-sucedida
+     */
+    private fun resetReconnectAttempts() {
+        reconnectAttempts = 0
     }
 
     private suspend fun onMessage(payload: Payload) {
@@ -113,10 +150,12 @@ open class DiscordWebSocketImpl(
                 logger.i("Gateway","resume_gateway_url updated to $resumeGatewayUrl")
                 logger.i("Gateway","session_id updated to $sessionId")
                 _connected.value = true
+                resetReconnectAttempts() // Conexão bem-sucedida, reseta backoff
                 return
             }
             "RESUMED" -> {
                 logger.i("Gateway","Session Resumed")
+                resetReconnectAttempts() // Sessão resumida com sucesso
             }
             else -> {}
         }
@@ -215,8 +254,9 @@ open class DiscordWebSocketImpl(
         resumeGatewayUrl = null
         sessionId = null
         _connected.value = false
+        reconnectAttempts = 0 // Reset para próxima conexão
         websocket?.close()
-        logger.e("Gateway","Connection to gateway closed")
+        logger.i("Gateway","Connection to gateway closed")
     }
 
     override suspend fun sendActivity(presence: Presence) {

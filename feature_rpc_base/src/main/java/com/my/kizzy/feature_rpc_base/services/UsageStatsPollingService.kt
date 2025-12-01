@@ -20,7 +20,9 @@ class UsageStatsPollingService : Service() {
 
     companion object {
         private const val TAG = "UsageStatsPolling"
-        private const val POLL_INTERVAL_MS = 500L
+        private const val BASE_POLL_INTERVAL_MS = 500L
+        private const val MAX_POLL_INTERVAL_MS = 2000L
+        private const val UNCHANGED_THRESHOLD = 10
         private const val NOTIFICATION_ID = 1002
         private const val CHANNEL_ID = "foreground_detection_channel"
         
@@ -43,6 +45,8 @@ class UsageStatsPollingService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var pollingJob: Job? = null
+    private var unchangedCount = 0
+    private var lastDetectedPackage: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -74,9 +78,9 @@ class UsageStatsPollingService : Service() {
 
     private fun startPolling() {
         pollingJob?.cancel()
+        unchangedCount = 0
         
         pollingJob = serviceScope.launch {
-            var lastPackage: String? = null
             Log.d(TAG, "🔄 Polling started")
 
             while (isActive) {
@@ -91,17 +95,37 @@ class UsageStatsPollingService : Service() {
                 try {
                     val currentPackage = detectorManager.getCurrentAppViaUsageStats()
 
-                    if (currentPackage != null && currentPackage != lastPackage) {
+                    if (currentPackage != null && currentPackage != lastDetectedPackage) {
                         Log.d(TAG, "📱 App: $currentPackage")
                         detectorManager.stateHolder.update(currentPackage)
-                        lastPackage = currentPackage
+                        lastDetectedPackage = currentPackage
+                        unchangedCount = 0 // Reset contador quando detecta mudança
+                    } else {
+                        unchangedCount++
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error polling", e)
                 }
 
-                delay(POLL_INTERVAL_MS)
+                // Polling adaptativo: aumenta intervalo se não há mudanças
+                val currentInterval = calculatePollingInterval()
+                delay(currentInterval)
             }
+        }
+    }
+
+    /**
+     * Calcula o intervalo de polling de forma adaptativa.
+     * Aumenta o intervalo quando não há mudanças de app por um tempo,
+     * reduzindo uso de bateria e CPU.
+     */
+    private fun calculatePollingInterval(): Long {
+        return if (unchangedCount > UNCHANGED_THRESHOLD) {
+            // Aumenta gradualmente até o máximo
+            val multiplier = minOf(unchangedCount / UNCHANGED_THRESHOLD, 4)
+            minOf(BASE_POLL_INTERVAL_MS * multiplier, MAX_POLL_INTERVAL_MS)
+        } else {
+            BASE_POLL_INTERVAL_MS
         }
     }
 
@@ -134,6 +158,8 @@ class UsageStatsPollingService : Service() {
         pollingJob?.cancel()
         serviceScope.cancel()
         detectorManager.setRunning(false)
+        lastDetectedPackage = null
+        unchangedCount = 0
         Log.d(TAG, "🔴 Service destroyed")
         super.onDestroy()
     }
